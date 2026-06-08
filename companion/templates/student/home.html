@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Student - StudyAid{% endblock %}
+{% block subtitle %}Student dashboard placeholder{% endblock %}
+{% block content %}
+  {% if student %}
+    <p>Hi <strong>{{ student.name }}</strong> (Class {{ student.class_name }}).</p>
+    <p>Device ID: <code>{{ student.device_id }}</code></p>
+  {% else %}
+    <p>No student found in database.</p>
+  {% endif %}
+  <p>Real planner and dashboard UI arrives in Week 3.</p>
+  <p><a href="/student/plan">View plan JSON (empty stub)</a></p>
+  <p><a href="/">Back home</a></p>
+{% endblock %}

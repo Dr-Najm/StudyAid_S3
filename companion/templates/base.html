@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}StudyAid Companion{% endblock %}</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+           max-width: 800px; margin: 2em auto; padding: 0 1em; color: #1a1a1a; }
+    header { border-bottom: 2px solid #0D7C7C; padding-bottom: 0.5em;
+             margin-bottom: 1.5em; }
+    header h1 { margin: 0; color: #0B1D3A; }
+    header .tag { color: #5A7080; font-size: 0.9em; }
+    footer { margin-top: 3em; padding-top: 1em; border-top: 1px solid #ccc;
+             color: #5A7080; font-size: 0.85em; }
+    a { color: #0D7C7C; }
+    code { background: #F0F5F6; padding: 0.1em 0.4em; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>StudyAid Companion</h1>
+    <div class="tag">{% block subtitle %}v9 development build{% endblock %}</div>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <footer>
+    StudyAid v9 - SMK Gudang Rasau
+  </footer>
+</body>
+</html>
