@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% set active = "generate" %}
+{% block title %}Bank Soalan — {{ bank.topic }} — StudyAid{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>📚 {{ bank.subject_name }} — {{ bank.topic }}</h2>
+  <p style="color:#5A7080;font-size:0.85em;margin-bottom:1em">
+    {{ questions|length }} soalan &nbsp;|&nbsp;
+    Dijana: {{ bank.generated_at.strftime('%d/%m/%Y %H:%M') }} &nbsp;|&nbsp;
+    Sumber: <strong>{{ bank.source }}</strong>
+  </p>
+
+  {% for q in questions %}
+  <div style="margin-bottom:1.2em;padding-bottom:1.2em;
+              {% if not loop.last %}border-bottom:1px solid #E8F4F4{% endif %}">
+    <p style="font-weight:600;margin-bottom:0.5em">
+      {{ loop.index }}. {{ q.question_text }}
+    </p>
+    {% set opts = q.options_json | fromjson %}
+    {% for opt in opts %}
+    <p style="margin-left:1em;padding:0.25em 0.5em;border-radius:4px;
+              {% if loop.index0 == q.correct_index %}
+                background:#D4EDDA;color:#155724;font-weight:600
+              {% endif %}">
+      {{ ['A','B','C','D'][loop.index0] }}. {{ opt }}
+      {% if loop.index0 == q.correct_index %}✓{% endif %}
+    </p>
+    {% endfor %}
+  </div>
+  {% endfor %}
+
+  <div style="margin-top:1em">
+    <a href="/admin/generate" class="btn btn-primary">← Kembali</a>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% set active = "generate" %}
+{% block title %}Jana Kuiz — StudyAid{% endblock %}
+{% block content %}
+
+<!-- ── Generate form ────────────────────────────────────── -->
+<div class="card">
+  <h2>🤖 Jana Bank Soalan dengan Gemini AI</h2>
+  <form method="POST" action="/admin/generate">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Subjek</label>
+        <select name="subject_id" required>
+          {% for s in subjects %}
+            <option value="{{ s.id }}"
+              {% if selected_subject and selected_subject == s.id %}selected{% endif %}>
+              {{ s.name_bm }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="flex:2;min-width:220px">
+        <label>Topik</label>
+        <input type="text" name="topic" value="{{ topic or '' }}"
+               placeholder="cth: Kemerdekaan Malaysia" required>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary" id="generate-btn">
+      ✨ Jana 10 Soalan
+    </button>
+    <span id="loading" style="display:none;margin-left:1em;color:#5A7080;font-size:0.9em">
+      Sedang menjana soalan... sila tunggu.
+    </span>
+  </form>
+</div>
+
+<!-- ── Existing banks ───────────────────────────────────── -->
+{% if banks %}
+<div class="card">
+  <h2>📚 Bank Soalan Sedia Ada</h2>
+  <table>
+    <thead>
+      <tr><th>Subjek</th><th>Topik</th><th>Soalan</th><th>Dijana</th><th>Sumber</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for b in banks %}
+      <tr>
+        <td>{{ b.subject_name }}</td>
+        <td>{{ b.topic }}</td>
+        <td>{{ b.question_count }}</td>
+        <td>{{ b.generated_at.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>
+          <span class="badge {% if b.source=='gemini' %}badge-progress{% else %}badge-pending{% endif %}">
+            {{ b.source }}
+          </span>
+        </td>
+        <td>
+          <a href="/admin/generate/view/{{ b.id }}" class="btn btn-primary btn-sm">Lihat</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<!-- ── Newly generated questions ────────────────────────── -->
+{% if questions %}
+<div class="card">
+  <h2>✅ Soalan Dijana — {{ topic }} ({{ questions|length }} soalan)</h2>
+  {% for q in questions %}
+  <div style="margin-bottom:1.2em;padding-bottom:1.2em;
+              {% if not loop.last %}border-bottom:1px solid #E8F4F4{% endif %}">
+    <p style="font-weight:600;margin-bottom:0.5em">
+      {{ loop.index }}. {{ q.question_text }}
+    </p>
+    {% set opts = q.options_json | fromjson %}
+    {% for opt in opts %}
+    <p style="margin-left:1em;padding:0.25em 0.5em;border-radius:4px;
+              {% if loop.index0 == q.correct_index %}
+                background:#D4EDDA;color:#155724;font-weight:600
+              {% endif %}">
+      {{ ['A','B','C','D'][loop.index0] }}. {{ opt }}
+      {% if loop.index0 == q.correct_index %}✓{% endif %}
+    </p>
+    {% endfor %}
+  </div>
+  {% endfor %}
+  {% if bank_id %}
+  <a href="/admin/generate/view/{{ bank_id }}" class="btn btn-primary">
+    Lihat Semua dalam Bank
+  </a>
+  {% endif %}
+</div>
+{% endif %}
+
+<script>
+  document.querySelector("form").addEventListener("submit", function() {
+    document.getElementById("generate-btn").disabled = true;
+    document.getElementById("loading").style.display = "inline";
+  });
+</script>
+{% endblock %}

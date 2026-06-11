@@ -18,6 +18,7 @@ def create_app():
     app = Flask(__name__)
     app.config["SQLALCHEMY_DATABASE_URI"] = config.SQLALCHEMY_DATABASE_URI
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SECRET_KEY"] = "studyaid-v9-dev-key"  # needed for flash()
 
     init_db(app)
     if config.SEED_DEMO_DATA:
@@ -27,6 +28,11 @@ def create_app():
     app.register_blueprint(teacher_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(api_bp)
+
+    # Jinja2 filter: parse JSON string in templates
+    # Usage: {{ q.options_json | fromjson }}
+    import json as _json
+    app.jinja_env.filters["fromjson"] = _json.loads
 
     @app.route("/")
     def root():

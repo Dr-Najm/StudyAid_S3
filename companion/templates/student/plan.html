@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% set active = "plan" %}
+{% block title %}Perancangan Belajar — StudyAid{% endblock %}
+{% block content %}
+
+<!-- ── Weekly Slots ─────────────────────────────────────── -->
+<div class="card">
+  <h2>📅 Jadual Mingguan</h2>
+
+  <form method="POST" action="/student/plan/slot/add">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Subjek</label>
+        <select name="subject_id" required>
+          {% for s in subjects %}
+            <option value="{{ s.id }}">{{ s.name_bm }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Hari</label>
+        <select name="day_of_week" required>
+          <option value="0">Isnin</option>
+          <option value="1">Selasa</option>
+          <option value="2">Rabu</option>
+          <option value="3">Khamis</option>
+          <option value="4">Jumaat</option>
+          <option value="5">Sabtu</option>
+          <option value="6">Ahad</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Masa Mula</label>
+        <input type="time" name="start_time" value="16:00" required>
+      </div>
+      <div class="form-group">
+        <label>Tempoh (minit)</label>
+        <input type="number" name="duration_min" value="60" min="10" max="300" required>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">+ Tambah Slot</button>
+  </form>
+
+  {% if slots %}
+    <table style="margin-top:1.2em">
+      <thead>
+        <tr>
+          <th>Hari</th><th>Masa</th><th>Tempoh</th><th>Subjek</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set day_names = ["Isnin","Selasa","Rabu","Khamis","Jumaat","Sabtu","Ahad"] %}
+        {% for slot in slots %}
+        <tr>
+          <td>{{ day_names[slot.day_of_week] }}</td>
+          <td>{{ slot.start_time }}</td>
+          <td>{{ slot.duration_min }} min</td>
+          <td>{{ slot.subject_name }}</td>
+          <td>
+            <form method="POST" action="/student/plan/slot/delete/{{ slot.id }}"
+                  style="display:inline"
+                  onsubmit="return confirm('Padam slot ini?')">
+              <button type="submit" class="btn btn-danger btn-sm">Padam</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p style="margin-top:1em;color:#9BB5CC;font-style:italic">
+      Tiada slot lagi. Tambah slot di atas.
+    </p>
+  {% endif %}
+</div>
+
+<!-- ── Topic Deadlines ──────────────────────────────────── -->
+<div class="card">
+  <h2>🎯 Sasaran Topik</h2>
+
+  <form method="POST" action="/student/plan/deadline/add">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Subjek</label>
+        <select name="subject_id" required>
+          {% for s in subjects %}
+            <option value="{{ s.id }}">{{ s.name_bm }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="flex:2;min-width:200px">
+        <label>Topik</label>
+        <input type="text" name="topic" placeholder="cth: Bab 3 — Kemerdekaan Malaysia" required>
+      </div>
+      <div class="form-group">
+        <label>Tarikh Akhir</label>
+        <input type="date" name="deadline" required>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">+ Tambah Sasaran</button>
+  </form>
+
+  {% if deadlines %}
+    <table style="margin-top:1.2em">
+      <thead>
+        <tr>
+          <th>Subjek</th><th>Topik</th><th>Tarikh Akhir</th><th>Status</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in deadlines %}
+        <tr>
+          <td>{{ d.subject_name }}</td>
+          <td>{{ d.topic }}</td>
+          <td>{{ d.deadline }}</td>
+          <td>
+            <form method="POST" action="/student/plan/deadline/status/{{ d.id }}"
+                  style="display:inline">
+              <select name="status" onchange="this.form.submit()"
+                      style="border:none;background:transparent;cursor:pointer;font-size:0.85em">
+                <option value="pending"     {% if d.status=='pending'     %}selected{% endif %}>
+                  ⏳ Belum Mula</option>
+                <option value="in_progress" {% if d.status=='in_progress' %}selected{% endif %}>
+                  🔄 Dalam Proses</option>
+                <option value="done"        {% if d.status=='done'        %}selected{% endif %}>
+                  ✅ Selesai</option>
+              </select>
+            </form>
+          </td>
+          <td>
+            <form method="POST" action="/student/plan/deadline/delete/{{ d.id }}"
+                  style="display:inline"
+                  onsubmit="return confirm('Padam sasaran ini?')">
+              <button type="submit" class="btn btn-danger btn-sm">Padam</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p style="margin-top:1em;color:#9BB5CC;font-style:italic">
+      Tiada sasaran lagi. Tambah sasaran di atas.
+    </p>
+  {% endif %}
+</div>
+{% endblock %}

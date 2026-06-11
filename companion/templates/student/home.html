@@ -1,14 +1,203 @@
 {% extends "base.html" %}
-{% block title %}Student - StudyAid{% endblock %}
-{% block subtitle %}Student dashboard placeholder{% endblock %}
+{% set active = "student" %}
+{% block title %}Dashboard — StudyAid{% endblock %}
 {% block content %}
+
+<!-- ── Welcome ─────────────────────────────────────────────────────────── -->
+<div style="margin-bottom:1em">
   {% if student %}
-    <p>Hi <strong>{{ student.name }}</strong> (Class {{ student.class_name }}).</p>
-    <p>Device ID: <code>{{ student.device_id }}</code></p>
-  {% else %}
-    <p>No student found in database.</p>
+    <h2 style="color:#0B1D3A;margin:0">Selamat Datang, {{ student.name }}</h2>
+    <p style="color:#5A7080;font-size:0.85em;margin:0.3em 0 0">
+      Peranti: <code>{{ student.device_id }}</code> &nbsp;|&nbsp;
+      Minggu ini: {{ week_start }} – {{ week_end }}
+    </p>
   {% endif %}
-  <p>Real planner and dashboard UI arrives in Week 3.</p>
-  <p><a href="/student/plan">View plan JSON (empty stub)</a></p>
-  <p><a href="/">Back home</a></p>
+</div>
+
+<!-- ── Metric cards ────────────────────────────────────────────────────── -->
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1em;margin-bottom:1.4em">
+
+  <div class="card" style="margin:0;text-align:center">
+    <div style="font-size:2em;font-weight:700;color:#0D7C7C">
+      {% if adherence_pct is not none %}{{ adherence_pct }}%{% else %}—{% endif %}
+    </div>
+    <div style="font-size:0.8em;color:#5A7080;margin-top:0.3em">Pematuhan</div>
+    <div style="font-size:0.75em;color:#9BB5CC">minggu ini</div>
+  </div>
+
+  <div class="card" style="margin:0;text-align:center">
+    <div style="font-size:2em;font-weight:700;color:#0D7C7C">{{ streak }}</div>
+    <div style="font-size:0.8em;color:#5A7080;margin-top:0.3em">Hari Berturut</div>
+    <div style="font-size:0.75em;color:#9BB5CC">streak semasa</div>
+  </div>
+
+  <div class="card" style="margin:0;text-align:center">
+    <div style="font-size:2em;font-weight:700;color:#0D7C7C">{{ total_sessions }}</div>
+    <div style="font-size:0.8em;color:#5A7080;margin-top:0.3em">Jumlah Sesi</div>
+    <div style="font-size:0.75em;color:#9BB5CC">keseluruhan</div>
+  </div>
+
+  <div class="card" style="margin:0;text-align:center">
+    <div style="font-size:2em;font-weight:700;color:#0D7C7C">{{ active_subjects }}</div>
+    <div style="font-size:0.8em;color:#5A7080;margin-top:0.3em">Subjek Aktif</div>
+    <div style="font-size:0.75em;color:#9BB5CC">minggu ini</div>
+  </div>
+
+</div>
+
+<!-- ── Charts row ──────────────────────────────────────────────────────── -->
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:1em;margin-bottom:1.4em">
+
+  <!-- Chart 1: Planned vs Actual -->
+  <div class="card" style="margin:0">
+    <h2>📊 Dirancang vs Aktual (minit)</h2>
+    <canvas id="chart1" height="120"></canvas>
+  </div>
+
+  <!-- Chart 2: Subject balance -->
+  <div class="card" style="margin:0">
+    <h2>🎯 Masa per Subjek</h2>
+    {% if chart2.labels %}
+      <canvas id="chart2" height="200"></canvas>
+    {% else %}
+      <p style="color:#9BB5CC;font-style:italic;margin-top:1em">
+        Tiada sesi minggu ini.
+      </p>
+    {% endif %}
+  </div>
+
+</div>
+
+<!-- ── Recent sessions ─────────────────────────────────────────────────── -->
+<div class="card">
+  <h2>🕐 Sesi Terkini</h2>
+  {% if recent %}
+    <table>
+      <thead>
+        <tr>
+          <th>Tarikh</th>
+          <th>Subjek</th>
+          <th>Aktif (min)</th>
+          <th>Fokus</th>
+          <th>Pematuhan</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in recent %}
+        <tr>
+          <td>{{ s.date }}</td>
+          <td>{{ s.subject }}</td>
+          <td>{{ s.active_min }}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:0.5em">
+              <div style="flex:1;background:#E8F4F4;border-radius:4px;height:8px">
+                <div style="width:{{ s.focus }}%;background:#0D7C7C;
+                            border-radius:4px;height:8px"></div>
+              </div>
+              <span style="font-size:0.85em;color:#5A7080">{{ s.focus }}%</span>
+            </div>
+          </td>
+          <td>
+            {% if s.adherence is not none %}
+              <span class="badge {% if s.adherence >= 80 %}badge-done
+                {% elif s.adherence >= 50 %}badge-progress
+                {% else %}badge-pending{% endif %}">
+                {{ s.adherence }}%
+              </span>
+            {% else %}
+              <span style="color:#9BB5CC;font-size:0.85em">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p style="color:#9BB5CC;font-style:italic">
+      Tiada sesi lagi. Mulakan sesi belajar dengan peranti StudyAid anda.
+    </p>
+  {% endif %}
+</div>
+
+<!-- ── Chart.js ────────────────────────────────────────────────────────── -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+// ── Chart 1: Dirancang vs Aktual bar chart ──────────────────────────────
+const ctx1 = document.getElementById("chart1");
+if (ctx1) {
+  new Chart(ctx1, {
+    type: "bar",
+    data: {
+      labels: {{ chart1.labels | tojson }},
+      datasets: [
+        {
+          label: "Dirancang",
+          data: {{ chart1.planned | tojson }},
+          backgroundColor: "rgba(11,29,58,0.6)",
+          borderColor: "#0B1D3A",
+          borderWidth: 1,
+          borderRadius: 4,
+        },
+        {
+          label: "Aktual",
+          data: {{ chart1.actual | tojson }},
+          backgroundColor: "rgba(13,124,124,0.7)",
+          borderColor: "#0D7C7C",
+          borderWidth: 1,
+          borderRadius: 4,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: "top" },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y} minit`
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: "Minit" }
+        }
+      }
+    }
+  });
+}
+
+// ── Chart 2: Subject balance doughnut ───────────────────────────────────
+const ctx2 = document.getElementById("chart2");
+if (ctx2) {
+  const colours = [
+    "#0D7C7C","#0B1D3A","#C49A22","#2E86AB",
+    "#A23B72","#F18F01","#5A7080","#44BBA4"
+  ];
+  new Chart(ctx2, {
+    type: "doughnut",
+    data: {
+      labels: {{ chart2.labels | tojson }},
+      datasets: [{
+        data: {{ chart2.minutes | tojson }},
+        backgroundColor: colours.slice(0, {{ chart2.labels | length }}),
+        borderWidth: 2,
+        borderColor: "#fff"
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: "bottom", labels: { font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.label}: ${ctx.parsed} minit`
+          }
+        }
+      }
+    }
+  });
+}
+</script>
 {% endblock %}
