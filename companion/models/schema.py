@@ -133,7 +133,8 @@ class DriftEvent(db.Model):
 class QuizAnswer(db.Model):
     __tablename__ = "quiz_answers"
     id = db.Column(db.Integer, primary_key=True)
-    session_id = db.Column(db.Integer, db.ForeignKey("sessions.id"), nullable=False)
+    # nullable=True: quiz-mode answers may not be linked to a study session
+    session_id = db.Column(db.Integer, db.ForeignKey("sessions.id"), nullable=True)
     question_id = db.Column(db.Integer, db.ForeignKey("quiz_questions.id"), nullable=False)
     chosen_index = db.Column(db.Integer, nullable=False)
     correct = db.Column(db.Boolean, nullable=False)

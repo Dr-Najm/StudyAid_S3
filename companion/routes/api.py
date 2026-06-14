@@ -9,7 +9,7 @@ Week 5: /api/session/start — real Session row creation.
 
 import json
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request
 from models.schema import (db, Student, Subject, Session, WeeklySlot,
                             DriftEvent, QuizBank, QuizQuestion, QuizAnswer)
@@ -108,7 +108,7 @@ def session_start():
     session = Session(
         student_id  = student.id,
         subject_id  = subject_id,
-        start_ts    = _parse_ts(start_ts),
+        start_ts    = datetime.utcnow(),  # Option A: server timestamp, device has no RTC
         end_ts      = None,
         active_min  = 0,
         idle_min    = 0,
@@ -215,16 +215,19 @@ def session_answer():
 
     correct = (chosen_index == question.correct_index)
 
-    # Store QuizAnswer row
-    if session_id:
-        db.session.add(QuizAnswer(
-            session_id    = session_id,
-            question_id   = question_id,
-            chosen_index  = chosen_index,
-            correct       = correct,
-            ts            = datetime.utcnow(),
-        ))
-        db.session.commit()
+    # Store QuizAnswer row.
+    # session_id may be None for drift quizzes outside a tracked session —
+    # store the answer anyway so quiz accuracy stats are captured.
+    # session_id=-1 from firmware means server session not yet assigned; treat as None.
+    stored_session_id = session_id if (session_id and session_id > 0) else None
+    db.session.add(QuizAnswer(
+        session_id    = stored_session_id,
+        question_id   = question_id,
+        chosen_index  = chosen_index,
+        correct       = correct,
+        ts            = datetime.utcnow(),
+    ))
+    db.session.commit()
 
     _log("session/answer",
          f"Sesi {session_id} soalan {question_id}: "
@@ -306,12 +309,20 @@ def session_end():
         _log("session/end", f"AMARAN: device_id '{device_id}' tidak dijumpai")
         return jsonify({"ok": False, "error": "device not found"}), 404
 
-    start_dt = _parse_ts(start_ts)
-    end_dt   = _parse_ts(end_ts)
+    now      = datetime.utcnow()
+    # Option A: server provides timestamps. Reconstruct start from end minus duration.
+    duration = timedelta(minutes=active_min + idle_min)
+    end_dt   = now
+    start_dt = now - duration if duration.total_seconds() > 0 else now
 
     # Update existing Session row if session_id provided, else create new
     session = db.session.get(Session, session_id) if session_id else None
     if session:
+        if session.start_ts and session.start_ts.year > 1970:
+            # Keep original start_ts if it was set correctly
+            start_dt = session.start_ts
+        else:
+            session.start_ts = start_dt
         session.end_ts      = end_dt
         session.active_min  = active_min
         session.idle_min    = idle_min

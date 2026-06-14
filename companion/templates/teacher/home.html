@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% set active = "teacher" %}
+{% block title %}Papan Pemuka Guru — StudyAid{% endblock %}
+{% block content %}
+
+<!-- ── Header ───────────────────────────────────────────────────────────── -->
+<div style="margin-bottom:1em">
+  <h2 style="color:#0B1D3A;margin:0">Papan Pemuka Guru</h2>
+  <p style="color:#5A7080;font-size:0.85em;margin:0.3em 0 0">
+    {{ student_count }} pelajar &nbsp;|&nbsp; Minggu ini: {{ week_start }} – {{ week_end }}
+  </p>
+</div>
+
+<!-- ── Student summary cards ────────────────────────────────────────────── -->
+<div style="display:grid;grid-template-columns:repeat({{ summaries|length }},1fr);
+            gap:1em;margin-bottom:1.4em">
+  {% for s in summaries %}
+  <div class="card" style="margin:0">
+    <h2>👤 {{ s.name }}</h2>
+    <p style="color:#5A7080;font-size:0.82em;margin-bottom:1em">
+      {{ s.class_name }} &nbsp;|&nbsp; <code>{{ s.device_id }}</code>
+    </p>
+
+    <!-- Mini metrics -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6em;margin-bottom:1em">
+      <div style="text-align:center;background:#F0F5F6;border-radius:6px;padding:0.5em">
+        <div style="font-size:1.4em;font-weight:700;color:#0D7C7C">
+          {{ s.total_sessions }}
+        </div>
+        <div style="font-size:0.75em;color:#5A7080">Sesi</div>
+      </div>
+      <div style="text-align:center;background:#F0F5F6;border-radius:6px;padding:0.5em">
+        <div style="font-size:1.4em;font-weight:700;color:#0D7C7C">
+          {{ s.total_active }} min
+        </div>
+        <div style="font-size:0.75em;color:#5A7080">Aktif</div>
+      </div>
+      <div style="text-align:center;background:#F0F5F6;border-radius:6px;padding:0.5em">
+        <div style="font-size:1.4em;font-weight:700;
+          color:{% if s.adherence_pct is not none and s.adherence_pct >= 70 %}#155724
+                {% elif s.adherence_pct is not none %}#856404
+                {% else %}#5A7080{% endif %}">
+          {% if s.adherence_pct is not none %}{{ s.adherence_pct }}%{% else %}—{% endif %}
+        </div>
+        <div style="font-size:0.75em;color:#5A7080">Pematuhan</div>
+      </div>
+      <div style="text-align:center;background:#F0F5F6;border-radius:6px;padding:0.5em">
+        <div style="font-size:1.4em;font-weight:700;color:#0D7C7C">
+          {{ s.avg_focus }}%
+        </div>
+        <div style="font-size:0.75em;color:#5A7080">Fokus</div>
+      </div>
+    </div>
+
+    <!-- Quiz accuracy -->
+    <div style="margin-bottom:0.8em">
+      <span style="font-size:0.82em;color:#5A7080">Ketepatan Kuiz: </span>
+      {% if s.quiz_pct is not none %}
+        <span class="badge {% if s.quiz_pct >= 70 %}badge-done
+          {% elif s.quiz_pct >= 40 %}badge-progress
+          {% else %}badge-pending{% endif %}">
+          {{ s.quiz_pct }}%
+        </span>
+      {% else %}
+        <span style="color:#9BB5CC;font-size:0.85em">Tiada data</span>
+      {% endif %}
+    </div>
+
+    <!-- Subject balance mini doughnut -->
+    {% if s.chart_labels %}
+    <canvas id="doughnut_{{ loop.index }}" height="160"></canvas>
+    {% else %}
+    <p style="color:#9BB5CC;font-style:italic;font-size:0.85em">
+      Tiada sesi minggu ini.
+    </p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<!-- ── Combined session log ──────────────────────────────────────────────── -->
+<div class="card">
+  <h2>📋 Log Sesi Minggu Ini</h2>
+  {% if all_week_sessions %}
+  <table>
+    <thead>
+      <tr>
+        <th>Pelajar</th><th>Tarikh</th><th>Masa</th>
+        <th>Subjek</th><th>Aktif (min)</th><th>Fokus</th><th>Pematuhan</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in all_week_sessions %}
+      <tr>
+        <td><strong>{{ s.student }}</strong></td>
+        <td>{{ s.date }}</td>
+        <td>{{ s.time }}</td>
+        <td>{{ s.subject }}</td>
+        <td>{{ s.active_min }}</td>
+        <td>
+          <div style="display:flex;align-items:center;gap:0.5em">
+            <div style="flex:1;background:#E8F4F4;border-radius:4px;height:6px;min-width:60px">
+              <div style="width:{{ s.focus }}%;background:#0D7C7C;
+                          border-radius:4px;height:6px"></div>
+            </div>
+            <span style="font-size:0.82em;color:#5A7080">{{ s.focus }}%</span>
+          </div>
+        </td>
+        <td>
+          {% if s.adherence is not none %}
+            <span class="badge
+              {% if s.adherence >= 80 %}badge-done
+              {% elif s.adherence >= 50 %}badge-progress
+              {% else %}badge-pending{% endif %}">
+              {{ s.adherence }}%
+            </span>
+          {% else %}
+            <span style="color:#9BB5CC">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:#9BB5CC;font-style:italic">
+    Tiada sesi minggu ini. Data akan muncul apabila pelajar memulakan sesi.
+  </p>
+  {% endif %}
+</div>
+
+<!-- ── Chart.js doughnuts ────────────────────────────────────────────────── -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const colours = ["#0D7C7C","#0B1D3A","#C49A22","#2E86AB",
+                  "#A23B72","#F18F01","#5A7080","#44BBA4"];
+{% for s in summaries %}
+{% if s.chart_labels %}
+new Chart(document.getElementById("doughnut_{{ loop.index }}"), {
+  type:"doughnut",
+  data:{
+    labels:{{ s.chart_labels | tojson }},
+    datasets:[{
+      data:{{ s.chart_minutes | tojson }},
+      backgroundColor:colours.slice(0,{{ s.chart_labels|length }}),
+      borderWidth:2, borderColor:"#fff"
+    }]
+  },
+  options:{
+    responsive:true,
+    plugins:{
+      legend:{position:"bottom",labels:{font:{size:10}}},
+      tooltip:{callbacks:{label:c=>`${c.label}: ${c.parsed} minit`}}
+    }
+  }
+});
+{% endif %}
+{% endfor %}
+</script>
+{% endblock %}

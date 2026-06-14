@@ -1382,7 +1382,20 @@ void handleBtnA() {
     case SCREEN_QUIZ_RESULT:
       break;  // no BtnA action on result screen
     case SCREEN_QUIZ_SUMMARY:
-      // BtnA = restart quiz with same subject
+      // BtnA = restart quiz with same subject — close current session first
+      if (companionReady && !sessionActive && serverSessionId >= 0) {
+        StaticJsonDocument<256> qEndDoc;
+        qEndDoc["device_id"]  = deviceId;
+        qEndDoc["session_id"] = serverSessionId;
+        qEndDoc["subject_id"] = quizSubjectIdx + 1;
+        qEndDoc["start_ts"]   = (long)(millis() / 1000);
+        qEndDoc["end_ts"]     = (long)(millis() / 1000);
+        qEndDoc["active_min"] = 0; qEndDoc["idle_min"] = 0;
+        qEndDoc["focus_score"]= 0;
+        String qEndBody; serializeJson(qEndDoc, qEndBody);
+        postToServer("/api/session/end", qEndBody);
+        serverSessionId = -1;
+      }
       memset(&quizState,0,sizeof(quizState));
       quizState.isDriftQuiz=false;
       fetchQuizQuestions(quizSubjectIdx+1);
@@ -1423,6 +1436,25 @@ void handleBtnB() {
     case SCREEN_QUIZ_SUBJECT:
       memset(&quizState, 0, sizeof(quizState));
       quizState.isDriftQuiz = false;
+
+      // Start a quiz-only session on the server so answers are stored properly.
+      // Only if not already in an active study session (which has its own serverSessionId).
+      if (companionReady && !sessionActive) {
+        StaticJsonDocument<128> qStartDoc;
+        qStartDoc["device_id"]  = deviceId;
+        qStartDoc["subject_id"] = quizSubjectIdx + 1;
+        qStartDoc["start_ts"]   = (long)(millis() / 1000);
+        String qStartBody; serializeJson(qStartDoc, qStartBody);
+        String qStartResp = postToServerWithResponse("/api/session/start", qStartBody);
+        if (qStartResp.length() > 0) {
+          StaticJsonDocument<64> rdoc;
+          if (!deserializeJson(rdoc, qStartResp)) {
+            serverSessionId = rdoc["session_id"] | -1;
+            Serial.printf("[QUIZ] Sesi kuiz dimulakan, ID: %d\n", serverSessionId);
+          }
+        }
+      }
+
       fetchQuizQuestions(quizSubjectIdx + 1);  // DB is 1-indexed
       if (quizState.totalLoaded > 0) {
         currentScreen = SCREEN_QUIZ_QUESTION;
@@ -1466,6 +1498,22 @@ void handleBtnB() {
 
     // v9.1: Quiz summary — BtnB exits to home
     case SCREEN_QUIZ_SUMMARY:
+      // Close the quiz-only session on the server (if we opened one)
+      if (companionReady && !sessionActive && serverSessionId >= 0) {
+        StaticJsonDocument<256> qEndDoc;
+        qEndDoc["device_id"]   = deviceId;
+        qEndDoc["session_id"]  = serverSessionId;
+        qEndDoc["subject_id"]  = quizSubjectIdx + 1;
+        qEndDoc["start_ts"]    = (long)(millis() / 1000);
+        qEndDoc["end_ts"]      = (long)(millis() / 1000);
+        qEndDoc["active_min"]  = 0;
+        qEndDoc["idle_min"]    = 0;
+        qEndDoc["focus_score"] = 0;
+        String qEndBody; serializeJson(qEndDoc, qEndBody);
+        postToServer("/api/session/end", qEndBody);
+        serverSessionId = -1;  // reset for next quiz
+        Serial.println("[QUIZ] Sesi kuiz ditamatkan.");
+      }
       currentScreen = SCREEN_HOME; homeMenuIdx = 0;
       break;
 

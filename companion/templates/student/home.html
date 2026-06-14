@@ -3,7 +3,7 @@
 {% block title %}Dashboard — StudyAid{% endblock %}
 {% block content %}
 
-<!-- ── Welcome ─────────────────────────────────────────────────────────── -->
+<!-- ── Welcome ──────────────────────────────────────────────────────────── -->
 <div style="margin-bottom:1em">
   {% if student %}
     <h2 style="color:#0B1D3A;margin:0">Selamat Datang, {{ student.name }}</h2>
@@ -14,9 +14,31 @@
   {% endif %}
 </div>
 
-<!-- ── Metric cards ────────────────────────────────────────────────────── -->
-<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1em;margin-bottom:1.4em">
+<!-- ── Alert banners ────────────────────────────────────────────────────── -->
+{% if urgent_deadline %}
+<div class="flash flash-err" style="display:flex;align-items:center;gap:0.5em">
+  ⚠️ <strong>Tarikh akhir hampir!</strong>
+  {{ urgent_deadline.subject }} — {{ urgent_deadline.topic }}
+  {% if urgent_deadline.days == 0 %}
+    <span style="color:#721C24">(Hari ini!)</span>
+  {% elif urgent_deadline.days < 0 %}
+    <span style="color:#721C24">(Telah lepas {{ urgent_deadline.days|abs }} hari)</span>
+  {% else %}
+    <span>({{ urgent_deadline.days }} hari lagi)</span>
+  {% endif %}
+</div>
+{% endif %}
 
+{% if balance_warning %}
+<div class="flash flash-err" style="display:flex;align-items:center;gap:0.5em">
+  ⚖️ Anda menghabiskan <strong>{{ balance_warning.pct }}%</strong> masa untuk
+  <strong>{{ balance_warning.subject }}</strong> minggu ini.
+  Pertimbangkan untuk mengimbangi jadual anda.
+</div>
+{% endif %}
+
+<!-- ── Metric cards ──────────────────────────────────────────────────────── -->
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1em;margin-bottom:1.4em">
   <div class="card" style="margin:0;text-align:center">
     <div style="font-size:2em;font-weight:700;color:#0D7C7C">
       {% if adherence_pct is not none %}{{ adherence_pct }}%{% else %}—{% endif %}
@@ -24,63 +46,90 @@
     <div style="font-size:0.8em;color:#5A7080;margin-top:0.3em">Pematuhan</div>
     <div style="font-size:0.75em;color:#9BB5CC">minggu ini</div>
   </div>
-
   <div class="card" style="margin:0;text-align:center">
     <div style="font-size:2em;font-weight:700;color:#0D7C7C">{{ streak }}</div>
     <div style="font-size:0.8em;color:#5A7080;margin-top:0.3em">Hari Berturut</div>
     <div style="font-size:0.75em;color:#9BB5CC">streak semasa</div>
   </div>
-
   <div class="card" style="margin:0;text-align:center">
     <div style="font-size:2em;font-weight:700;color:#0D7C7C">{{ total_sessions }}</div>
     <div style="font-size:0.8em;color:#5A7080;margin-top:0.3em">Jumlah Sesi</div>
     <div style="font-size:0.75em;color:#9BB5CC">keseluruhan</div>
   </div>
-
   <div class="card" style="margin:0;text-align:center">
     <div style="font-size:2em;font-weight:700;color:#0D7C7C">{{ active_subjects }}</div>
     <div style="font-size:0.8em;color:#5A7080;margin-top:0.3em">Subjek Aktif</div>
     <div style="font-size:0.75em;color:#9BB5CC">minggu ini</div>
   </div>
-
 </div>
 
-<!-- ── Charts row ──────────────────────────────────────────────────────── -->
+<!-- ── Charts row ────────────────────────────────────────────────────────── -->
 <div style="display:grid;grid-template-columns:2fr 1fr;gap:1em;margin-bottom:1.4em">
-
-  <!-- Chart 1: Planned vs Actual -->
   <div class="card" style="margin:0">
     <h2>📊 Dirancang vs Aktual (minit)</h2>
     <canvas id="chart1" height="120"></canvas>
   </div>
-
-  <!-- Chart 2: Subject balance -->
   <div class="card" style="margin:0">
     <h2>🎯 Masa per Subjek</h2>
     {% if chart2.labels %}
       <canvas id="chart2" height="200"></canvas>
     {% else %}
-      <p style="color:#9BB5CC;font-style:italic;margin-top:1em">
-        Tiada sesi minggu ini.
-      </p>
+      <p style="color:#9BB5CC;font-style:italic;margin-top:1em">Tiada sesi minggu ini.</p>
     {% endif %}
   </div>
-
 </div>
 
-<!-- ── Recent sessions ─────────────────────────────────────────────────── -->
+<!-- ── Quiz accuracy ─────────────────────────────────────────────────────── -->
+{% if quiz_accuracy %}
+<div class="card" style="margin-bottom:1.4em">
+  <h2>🧠 Ketepatan Kuiz per Subjek</h2>
+  <canvas id="chart3" height="80"></canvas>
+</div>
+{% endif %}
+
+<!-- ── Upcoming deadlines ────────────────────────────────────────────────── -->
+{% if deadlines_dash %}
+<div class="card" style="margin-bottom:1.4em">
+  <h2>📅 Sasaran Topik Akan Datang</h2>
+  <table>
+    <thead>
+      <tr><th>Subjek</th><th>Topik</th><th>Tarikh Akhir</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      {% for d in deadlines_dash %}
+      <tr>
+        <td>{{ d.subject }}</td>
+        <td>{{ d.topic }}</td>
+        <td>{{ d.deadline }}</td>
+        <td>
+          {% if d.badge == "overdue" %}
+            <span class="badge" style="background:#F8D7DA;color:#721C24">
+              ⚠️ Telah Lepas
+            </span>
+          {% elif d.badge == "soon" %}
+            <span class="badge" style="background:#FFF3CD;color:#856404">
+              🔔 {{ d.days_left }} hari lagi
+            </span>
+          {% else %}
+            <span class="badge badge-done">
+              ✓ {{ d.days_left }} hari lagi
+            </span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<!-- ── Recent sessions ───────────────────────────────────────────────────── -->
 <div class="card">
   <h2>🕐 Sesi Terkini</h2>
   {% if recent %}
     <table>
       <thead>
-        <tr>
-          <th>Tarikh</th>
-          <th>Subjek</th>
-          <th>Aktif (min)</th>
-          <th>Fokus</th>
-          <th>Pematuhan</th>
-        </tr>
+        <tr><th>Tarikh</th><th>Subjek</th><th>Aktif (min)</th><th>Fokus</th><th>Pematuhan</th></tr>
       </thead>
       <tbody>
         {% for s in recent %}
@@ -91,17 +140,14 @@
           <td>
             <div style="display:flex;align-items:center;gap:0.5em">
               <div style="flex:1;background:#E8F4F4;border-radius:4px;height:8px">
-                <div style="width:{{ s.focus }}%;background:#0D7C7C;
-                            border-radius:4px;height:8px"></div>
+                <div style="width:{{ s.focus }}%;background:#0D7C7C;border-radius:4px;height:8px"></div>
               </div>
               <span style="font-size:0.85em;color:#5A7080">{{ s.focus }}%</span>
             </div>
           </td>
           <td>
             {% if s.adherence is not none %}
-              <span class="badge {% if s.adherence >= 80 %}badge-done
-                {% elif s.adherence >= 50 %}badge-progress
-                {% else %}badge-pending{% endif %}">
+              <span class="badge {% if s.adherence >= 80 %}badge-done{% elif s.adherence >= 50 %}badge-progress{% else %}badge-pending{% endif %}">
                 {{ s.adherence }}%
               </span>
             {% else %}
@@ -119,85 +165,78 @@
   {% endif %}
 </div>
 
-<!-- ── Chart.js ────────────────────────────────────────────────────────── -->
+<!-- ── Chart.js ──────────────────────────────────────────────────────────── -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
-// ── Chart 1: Dirancang vs Aktual bar chart ──────────────────────────────
-const ctx1 = document.getElementById("chart1");
-if (ctx1) {
-  new Chart(ctx1, {
-    type: "bar",
-    data: {
-      labels: {{ chart1.labels | tojson }},
-      datasets: [
-        {
-          label: "Dirancang",
-          data: {{ chart1.planned | tojson }},
-          backgroundColor: "rgba(11,29,58,0.6)",
-          borderColor: "#0B1D3A",
-          borderWidth: 1,
-          borderRadius: 4,
-        },
-        {
-          label: "Aktual",
-          data: {{ chart1.actual | tojson }},
-          backgroundColor: "rgba(13,124,124,0.7)",
-          borderColor: "#0D7C7C",
-          borderWidth: 1,
-          borderRadius: 4,
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: { position: "top" },
-        tooltip: {
-          callbacks: {
-            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y} minit`
-          }
-        }
-      },
-      scales: {
-        y: {
-          beginAtZero: true,
-          title: { display: true, text: "Minit" }
-        }
-      }
-    }
-  });
-}
+const colours = ["#0D7C7C","#0B1D3A","#C49A22","#2E86AB",
+                  "#A23B72","#F18F01","#5A7080","#44BBA4"];
 
-// ── Chart 2: Subject balance doughnut ───────────────────────────────────
-const ctx2 = document.getElementById("chart2");
-if (ctx2) {
-  const colours = [
-    "#0D7C7C","#0B1D3A","#C49A22","#2E86AB",
-    "#A23B72","#F18F01","#5A7080","#44BBA4"
-  ];
-  new Chart(ctx2, {
-    type: "doughnut",
-    data: {
-      labels: {{ chart2.labels | tojson }},
-      datasets: [{
-        data: {{ chart2.minutes | tojson }},
-        backgroundColor: colours.slice(0, {{ chart2.labels | length }}),
-        borderWidth: 2,
-        borderColor: "#fff"
-      }]
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: { position: "bottom", labels: { font: { size: 11 } } },
-        tooltip: {
-          callbacks: {
-            label: ctx => `${ctx.label}: ${ctx.parsed} minit`
-          }
-        }
-      }
+// Chart 1: Planned vs Actual
+new Chart(document.getElementById("chart1"), {
+  type: "bar",
+  data: {
+    labels: {{ chart1.labels | tojson }},
+    datasets: [
+      { label:"Dirancang", data:{{ chart1.planned | tojson }},
+        backgroundColor:"rgba(11,29,58,0.6)", borderColor:"#0B1D3A",
+        borderWidth:1, borderRadius:4 },
+      { label:"Aktual", data:{{ chart1.actual | tojson }},
+        backgroundColor:"rgba(13,124,124,0.7)", borderColor:"#0D7C7C",
+        borderWidth:1, borderRadius:4 }
+    ]
+  },
+  options: {
+    responsive:true,
+    plugins:{ legend:{position:"top"},
+      tooltip:{ callbacks:{ label:c=>`${c.dataset.label}: ${c.parsed.y} minit` }}},
+    scales:{ y:{ beginAtZero:true, title:{display:true,text:"Minit"} }}
+  }
+});
+
+// Chart 2: Subject doughnut
+{% if chart2.labels %}
+new Chart(document.getElementById("chart2"), {
+  type:"doughnut",
+  data:{
+    labels:{{ chart2.labels | tojson }},
+    datasets:[{ data:{{ chart2.minutes | tojson }},
+      backgroundColor:colours.slice(0,{{ chart2.labels|length }}),
+      borderWidth:2, borderColor:"#fff" }]
+  },
+  options:{
+    responsive:true,
+    plugins:{
+      legend:{position:"bottom",labels:{font:{size:11}}},
+      tooltip:{callbacks:{label:c=>`${c.label}: ${c.parsed} minit`}}
     }
-  });
-}
+  }
+});
+{% endif %}
+
+// Chart 3: Quiz accuracy horizontal bar
+{% if quiz_accuracy %}
+new Chart(document.getElementById("chart3"), {
+  type:"bar",
+  data:{
+    labels:{{ chart3.labels | tojson }},
+    datasets:[{
+      label:"Ketepatan (%)",
+      data:{{ chart3.pct | tojson }},
+      backgroundColor:{{ chart3.labels | tojson }}.map((_,i)=>colours[i%colours.length]),
+      borderRadius:4
+    }]
+  },
+  options:{
+    indexAxis:"y",
+    responsive:true,
+    plugins:{ legend:{display:false},
+      tooltip:{callbacks:{label:c=>`${c.parsed.x}% betul`}}},
+    scales:{
+      x:{ beginAtZero:true, max:100,
+          title:{display:true,text:"% Jawapan Betul"} }
+    }
+  }
+});
+{% endif %}
 </script>
 {% endblock %}
