@@ -4,15 +4,39 @@
 {% block content %}
 
 <!-- ── Welcome ──────────────────────────────────────────────────────────── -->
-<div style="margin-bottom:1em">
+<div style="margin-bottom:0.6em">
   {% if student %}
     <h2 style="color:#0B1D3A;margin:0">Selamat Datang, {{ student.name }}</h2>
     <p style="color:#5A7080;font-size:0.85em;margin:0.3em 0 0">
-      Peranti: <code>{{ student.device_id }}</code> &nbsp;|&nbsp;
       Minggu ini: {{ week_start }} – {{ week_end }}
     </p>
   {% endif %}
 </div>
+<!-- ── Student Switcher ─────────────────────────────────────────────────── -->
+<div style="display:flex;align-items:center;gap:0.8em;margin-bottom:1em;
+            background:#fff;border-radius:8px;padding:0.7em 1em;
+            box-shadow:0 1px 4px rgba(0,0,0,0.08)">
+  <span style="font-size:0.85em;color:#5A7080;font-weight:600;white-space:nowrap">
+    👤 Pelajar:
+  </span>
+  <select id="student-switcher"
+          onchange="window.location.href='/student/?student_id='+this.value"
+          style="border:1px solid #B0CACF;border-radius:5px;padding:0.35em 0.6em;
+                 font-size:0.95em;font-family:inherit;background:#fff;
+                 color:#0B1D3A;cursor:pointer;flex:1;max-width:280px">
+    {% for s in students %}
+    <option value="{{ s.id }}"
+            {% if s.id == student.id %}selected{% endif %}>
+      {{ s.name }} ({{ s.class_name }})
+    </option>
+    {% endfor %}
+  </select>
+  <span style="font-size:0.82em;color:#9BB5CC">
+    <code>{{ student.device_id }}</code>
+  </span>
+</div>
+
+
 
 <!-- ── Alert banners ────────────────────────────────────────────────────── -->
 {% if urgent_deadline %}
