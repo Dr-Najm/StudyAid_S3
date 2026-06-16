@@ -236,6 +236,31 @@ def session_answer():
     return jsonify({"correct": correct})
 
 
+# ── Quiz topics — topic list for a subject ────────────────────────────────────
+@api_bp.route("/quiz/topics", methods=["GET"])
+def quiz_topics():
+    """
+    Return distinct topic names available for a subject.
+    Called by device after subject is selected in Quiz Mode so the student
+    can pick a specific topic before questions are fetched.
+    Query params:
+        subject_id : int (required)
+    Response: {"topics": ["Topik A", "Topik B", ...]}
+              {"topics": []} if no banks exist for this subject
+    """
+    subject_id = request.args.get("subject_id", type=int)
+    if subject_id is None:
+        return jsonify({"error": "subject_id required"}), 400
+
+    banks = QuizBank.query.filter_by(subject_id=subject_id)\
+        .order_by(QuizBank.topic).all()
+    topics = [b.topic for b in banks]
+
+    _log("quiz/topics",
+         f"Subjek {subject_id}: {len(topics)} topik dijumpai")
+    return jsonify({"topics": topics})
+
+
 # ── Quiz questions — Quiz Mode fetch ─────────────────────────────────────────
 @api_bp.route("/quiz/questions", methods=["GET"])
 def quiz_questions():
@@ -243,10 +268,12 @@ def quiz_questions():
     Fetch up to 10 random questions for Quiz Mode.
     Query params:
         subject_id  : int  (required)
+        topic       : str  (optional — filter to a specific quiz bank topic)
         session_id  : int  (optional — used to exclude already-answered Qs)
     Returns compact JSON to minimise device parse time.
     """
     subject_id = request.args.get("subject_id", type=int)
+    topic      = request.args.get("topic",      type=str)
     session_id = request.args.get("session_id", type=int)
 
     if subject_id is None:
@@ -260,8 +287,16 @@ def quiz_questions():
             QuizAnswer.query.filter_by(session_id=session_id).all()
         ]
 
-    # Try subject-specific banks first, fall back to any bank
-    banks = QuizBank.query.filter_by(subject_id=subject_id).all()
+    # Filter banks by subject, and by topic if provided
+    bank_query = QuizBank.query.filter_by(subject_id=subject_id)
+    if topic:
+        bank_query = bank_query.filter_by(topic=topic)
+    banks = bank_query.all()
+
+    # If no topic-specific bank found, fall back to all banks for this subject
+    if not banks:
+        banks = QuizBank.query.filter_by(subject_id=subject_id).all()
+    # If still nothing, fall back to any bank
     if not banks:
         banks = QuizBank.query.all()
 
@@ -276,14 +311,14 @@ def quiz_questions():
 
     if not pool:
         _log("quiz/questions",
-             f"Tiada soalan untuk subjek {subject_id}")
+             f"Tiada soalan untuk subjek {subject_id} topik '{topic}'")
         return jsonify({"questions": [], "error": "no questions found"})
 
     selected = random.sample(pool, min(10, len(pool)))
     questions = [_format_question(q) for q in selected]
 
     _log("quiz/questions",
-         f"Subjek {subject_id}: {len(questions)} soalan dihantar "
+         f"Subjek {subject_id} topik '{topic}': {len(questions)} soalan dihantar "
          f"(sesi {session_id})")
 
     return jsonify({"questions": questions})

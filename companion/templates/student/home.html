@@ -195,11 +195,17 @@
 const colours = ["#0D7C7C","#0B1D3A","#C49A22","#2E86AB",
                   "#A23B72","#F18F01","#5A7080","#44BBA4"];
 
-// Chart 1: Planned vs Actual
+// Chart 1: Planned vs Actual — two-line x-axis (day name + subject)
+const chart1Days     = {{ chart1.labels   | tojson }};
+const chart1Subjects = {{ chart1.subjects | tojson }};
+// Combine into two-line labels: [["Isnin","Matematik"], ...]
+const chart1Labels   = chart1Days.map((d,i) =>
+  chart1Subjects[i] ? [d, chart1Subjects[i]] : [d]
+);
 new Chart(document.getElementById("chart1"), {
   type: "bar",
   data: {
-    labels: {{ chart1.labels | tojson }},
+    labels: chart1Labels,
     datasets: [
       { label:"Dirancang", data:{{ chart1.planned | tojson }},
         backgroundColor:"rgba(11,29,58,0.6)", borderColor:"#0B1D3A",
@@ -213,7 +219,10 @@ new Chart(document.getElementById("chart1"), {
     responsive:true,
     plugins:{ legend:{position:"top"},
       tooltip:{ callbacks:{ label:c=>`${c.dataset.label}: ${c.parsed.y} minit` }}},
-    scales:{ y:{ beginAtZero:true, title:{display:true,text:"Minit"} }}
+    scales:{
+      y:{ beginAtZero:true, title:{display:true,text:"Minit"} },
+      x:{ ticks:{ font:{ size:11 } } }
+    }
   }
 });
 

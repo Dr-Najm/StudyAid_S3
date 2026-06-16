@@ -79,10 +79,27 @@ def _build_dashboard(student):
     for s in week_sessions:
         actual_per_day[s.start_ts.weekday()] += s.active_min
 
+    # Build subject label per day: show subject name(s) planned for each day
+    subject_per_day = []
+    for i in range(7):
+        day_slots = [s for s in slots if s.day_of_week == i]
+        if day_slots:
+            names = []
+            for sl in day_slots:
+                subj = db.session.get(Subject, sl.subject_id)
+                if subj:
+                    # Use short form for display (first word only if multi-word)
+                    short = subj.name_bm.split()[0] if subj else ""
+                    names.append(short)
+            subject_per_day.append(", ".join(names))
+        else:
+            subject_per_day.append("")
+
     chart1 = {
-        "labels":  [_day_name(i) for i in range(7)],
-        "planned": planned_per_day,
-        "actual":  actual_per_day,
+        "labels":      [_day_name(i) for i in range(7)],
+        "subjects":    subject_per_day,
+        "planned":     planned_per_day,
+        "actual":      actual_per_day,
     }
 
     subject_minutes = {}

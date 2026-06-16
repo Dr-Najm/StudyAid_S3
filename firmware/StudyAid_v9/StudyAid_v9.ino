@@ -1,5 +1,5 @@
 /*
- * StudyAid Firmware v9.2
+ * StudyAid Firmware v9.3
  * Hardware: M5StickS3 + M5 Unit NFC (ST25R3916, I2C via Grove Port A)
  *
  * Button mapping:
@@ -49,6 +49,11 @@
  *           Session end sends server session_id for proper DB update
  *   v9.2  - Periodic focus score POST every 15 seconds during active session
  *           Enables live session monitor on companion app dashboard
+ *   v9.3  - Student name shown on Home menu for easier device identification
+ *           Subject list updated: Fizik, Kimia, Biologi replace Bahasa Inggeris,
+ *           Sains, Pendidikan Moral
+ *           Quiz Mode: topic picker screen added between subject and question
+ *           New API call: GET /api/quiz/topics?subject_id=X
  */
 
 // ─── Core Libraries ────────────────────────────────────────────────────────
@@ -83,15 +88,15 @@
 #define COMP_TIMEOUT_MS  3000   // HTTP request timeout — fail fast, don't block loop
 
 // ─── Subjects + Rest slot ──────────────────────────────────────────────────
-// v9: Updated from 5 subjects to 8 core SPM subjects matching companion app DB.
-// Subject indices here must match the seeded order in companion/models/schema.py:
-//   0=Bahasa Melayu, 1=Bahasa Inggeris, 2=Matematik, 3=Sains,
-//   4=Sejarah, 5=Geografi, 6=Pendidikan Islam, 7=Pendidikan Moral
+// v9.3: Updated subject list — Bahasa Inggeris, Sains, Pendidikan Moral removed;
+//       Fizik, Kimia, Biologi added. Order must match companion/models/schema.py:
+//   0=Bahasa Melayu, 1=Matematik, 2=Sejarah, 3=Geografi,
+//   4=Pendidikan Islam, 5=Fizik, 6=Kimia, 7=Biologi
 #define NUM_SUBJECTS 8
 #define REST_SLOT    8
 const char* subjects[NUM_SUBJECTS] = {
-  "Bhs Melayu", "Bhs Inggeris", "Matematik", "Sains",
-  "Sejarah", "Geografi", "Pend Islam", "Pend Moral"
+  "Bhs Melayu", "Matematik", "Sejarah", "Geografi",
+  "Pend Islam", "Fizik", "Kimia", "Biologi"
 };
 
 // ─── IMU States ────────────────────────────────────────────────────────────
@@ -117,6 +122,7 @@ enum AppScreen {
   SCREEN_CONFIRM_RESET,
   // v9.1: Quiz Mode screens
   SCREEN_QUIZ_SUBJECT,    // subject picker before quiz starts
+  SCREEN_QUIZ_TOPIC,      // v9.3: topic picker after subject selected
   SCREEN_QUIZ_QUESTION,   // question + options display
   SCREEN_QUIZ_RESULT,     // brief correct/incorrect feedback
   SCREEN_QUIZ_SUMMARY     // end-of-set score summary
@@ -212,9 +218,11 @@ const unsigned long restDurationVals[]      = { 60000,   300000,  600000  };
 //                  true  = Companion (WiFi STA, uploads to Flask server)
 // companionReady : set true after successful WiFi STA connection at boot
 // deviceId       : identifies this device in session uploads (matches DB seed)
+// studentName    : displayed on Home menu so devices are easy to tell apart
 bool        companionMode  = false;
 bool        companionReady = false;
-const char* deviceId       = "studyaid-02";   // change to "studyaid-02" for second device
+const char* deviceId       = "studyaid-01";   // change to "studyaid-02" for second device
+const char* studentName    = "M. Khalish";    // change to "Rania Batrisyia" for second device
 
 // v9: Forward declaration — postToServer() body is defined later in the file,
 // after setup(). Without this the compiler rejects the call inside endSession().
@@ -252,6 +260,13 @@ QuizState_t quizState;
 
 int quizSubjectIdx = 0;     // subject picker cursor
 
+// v9.3: Topic picker state
+#define MAX_QUIZ_TOPICS 10
+#define MAX_TOPIC_LEN   80
+char quizTopics[MAX_QUIZ_TOPICS][MAX_TOPIC_LEN];
+int  quizTopicCount = 0;
+int  quizTopicIdx   = 0;    // topic picker cursor
+
 // ─── v9.2: Periodic focus report ───────────────────────────────────────────
 // POSTs current focus score to /api/session/update every 15 seconds during
 // an active Companion mode session. Enables live monitor on dashboard.
@@ -268,8 +283,10 @@ unsigned long lastDriftQuizMs = 0;
 const unsigned long quizWindowVals[] = { 60000UL, 180000UL, 300000UL };
 
 // Forward declarations for quiz functions defined later in the file
-void fetchQuizQuestions(int subjectId);
+void fetchQuizTopics(int subjectId);   // v9.3: topic picker
+void fetchQuizQuestions(int subjectId, const char* topic);
 void renderQuizSubject();
+void renderQuizTopic();                // v9.3: topic picker screen
 void renderQuizQuestion();
 void renderQuizResult();
 void renderQuizSummary();
@@ -1188,6 +1205,10 @@ void renderHome() {
       M5.Display.setTextColor(ORANGE,BLACK); M5.Display.println("! Belum dikalibrasi");
       M5.Display.setTextColor(WHITE,BLACK);
     }
+    // v9.3: Show student name so devices are easy to identify
+    M5.Display.setTextColor(CYAN,BLACK);
+    M5.Display.printf("%s\n", studentName);
+    M5.Display.setTextColor(WHITE,BLACK);
     M5.Display.println("Tiada sesi aktif\n");
     M5.Display.setTextColor(DARKGREY,BLACK);
     M5.Display.println("WiFi: " WIFI_IP "\n");
@@ -1353,6 +1374,7 @@ void renderCurrentScreen() {
     case SCREEN_CONFIRM_RESET: renderConfirmReset();  break;
     // v9.1: Quiz screens
     case SCREEN_QUIZ_SUBJECT:  renderQuizSubject();   break;
+    case SCREEN_QUIZ_TOPIC:    renderQuizTopic();     break;  // v9.3
     case SCREEN_QUIZ_QUESTION: renderQuizQuestion();  break;
     case SCREEN_QUIZ_RESULT:   renderQuizResult();    break;
     case SCREEN_QUIZ_SUMMARY:  renderQuizSummary();   break;
@@ -1385,12 +1407,16 @@ void handleBtnA() {
     // v9.1: Quiz BtnA handlers
     case SCREEN_QUIZ_SUBJECT:
       quizSubjectIdx=(quizSubjectIdx+1)%NUM_SUBJECTS; break;
+    case SCREEN_QUIZ_TOPIC:    // v9.3: cycle through available topics
+      if (quizTopicCount > 0)
+        quizTopicIdx=(quizTopicIdx+1)%quizTopicCount;
+      break;
     case SCREEN_QUIZ_QUESTION:
       quizState.selectedOpt=(quizState.selectedOpt+1)%4; break;
     case SCREEN_QUIZ_RESULT:
       break;  // no BtnA action on result screen
     case SCREEN_QUIZ_SUMMARY:
-      // BtnA = restart quiz with same subject — close current session first
+      // BtnA = restart — close current session, go back to topic picker
       if (companionReady && !sessionActive && serverSessionId >= 0) {
         StaticJsonDocument<256> qEndDoc;
         qEndDoc["device_id"]  = deviceId;
@@ -1404,10 +1430,9 @@ void handleBtnA() {
         postToServer("/api/session/end", qEndBody);
         serverSessionId = -1;
       }
-      memset(&quizState,0,sizeof(quizState));
-      quizState.isDriftQuiz=false;
-      fetchQuizQuestions(quizSubjectIdx+1);
-      currentScreen=(quizState.totalLoaded>0)?SCREEN_QUIZ_QUESTION:SCREEN_HOME;
+      // Return to topic picker for same subject
+      quizTopicIdx  = 0;
+      currentScreen = SCREEN_QUIZ_TOPIC;
       break;
   }
   lastDisplayRefresh=0;
@@ -1440,13 +1465,25 @@ void handleBtnB() {
       }
       break;
 
-    // v9.1: Quiz subject picker — BtnB confirms subject and fetches questions
+    // v9.1/v9.3: Quiz subject picker — BtnB fetches topics then shows topic screen
     case SCREEN_QUIZ_SUBJECT:
+      quizTopicIdx = 0;
+      fetchQuizTopics(quizSubjectIdx + 1);  // GET /api/quiz/topics?subject_id=X
+      if (quizTopicCount > 0) {
+        currentScreen = SCREEN_QUIZ_TOPIC;
+      } else {
+        // No topics available for this subject
+        showNotification("Tiada topik tersedia");
+        currentScreen = SCREEN_HOME;
+      }
+      break;
+
+    // v9.3: Quiz topic picker — BtnB confirms topic and fetches questions
+    case SCREEN_QUIZ_TOPIC: {
       memset(&quizState, 0, sizeof(quizState));
       quizState.isDriftQuiz = false;
 
       // Start a quiz-only session on the server so answers are stored properly.
-      // Only if not already in an active study session (which has its own serverSessionId).
       if (companionReady && !sessionActive) {
         StaticJsonDocument<128> qStartDoc;
         qStartDoc["device_id"]  = deviceId;
@@ -1463,7 +1500,8 @@ void handleBtnB() {
         }
       }
 
-      fetchQuizQuestions(quizSubjectIdx + 1);  // DB is 1-indexed
+      // Fetch questions filtered by the selected topic
+      fetchQuizQuestions(quizSubjectIdx + 1, quizTopics[quizTopicIdx]);
       if (quizState.totalLoaded > 0) {
         currentScreen = SCREEN_QUIZ_QUESTION;
       } else {
@@ -1471,6 +1509,7 @@ void handleBtnB() {
         currentScreen = SCREEN_HOME;
       }
       break;
+    }
 
     // v9.1: Quiz question — BtnB confirms selected option
     case SCREEN_QUIZ_QUESTION: {
@@ -2306,12 +2345,53 @@ void initCompanionWiFi() {
   }
 }
 
-// ─── v9.1: Quiz Functions ──────────────────────────────────────────────────
+// ─── v9.1/v9.3: Quiz Functions ─────────────────────────────────────────────
 
-// fetchQuizQuestions — GET /api/quiz/questions?subject_id=X&session_id=Y
-// Populates quizState.questions[] and sets quizState.totalLoaded.
-// Uses WiFiClient + HTTPClient directly (GET, not POST).
-void fetchQuizQuestions(int subjectId) {
+// fetchQuizTopics — GET /api/quiz/topics?subject_id=X
+// Populates quizTopics[] and sets quizTopicCount.
+// Called after subject is confirmed. If server returns no topics, quizTopicCount=0.
+void fetchQuizTopics(int subjectId) {
+  quizTopicCount = 0;
+  if (!companionReady) return;
+
+  HTTPClient http;
+  char url[128];
+  snprintf(url, sizeof(url),
+    "http://%s:%d/api/quiz/topics?subject_id=%d",
+    COMP_SERVER_IP, COMP_SERVER_PORT, subjectId);
+
+  http.begin(url);
+  http.setTimeout(COMP_TIMEOUT_MS);
+  int code = http.GET();
+
+  if (code != 200) {
+    Serial.printf("[QUIZ] fetchQuizTopics gagal: HTTP %d\n", code);
+    http.end();
+    return;
+  }
+
+  String body = http.getString();
+  http.end();
+
+  // Parse response: {"topics": ["Topik A", "Topik B", ...]}
+  StaticJsonDocument<1024> doc;
+  if (deserializeJson(doc, body)) {
+    Serial.println("[QUIZ] fetchQuizTopics: JSON parse gagal");
+    return;
+  }
+
+  JsonArray arr = doc["topics"].as<JsonArray>();
+  for (JsonVariant t : arr) {
+    if (quizTopicCount >= MAX_QUIZ_TOPICS) break;
+    strlcpy(quizTopics[quizTopicCount], t | "", MAX_TOPIC_LEN);
+    quizTopicCount++;
+  }
+  Serial.printf("[QUIZ] %d topik dimuatkan (subjek %d)\n", quizTopicCount, subjectId);
+}
+
+// fetchQuizQuestions — GET /api/quiz/questions?subject_id=X&topic=Y&session_id=Z
+// v9.3: now accepts a topic string to filter questions from a specific bank.
+void fetchQuizQuestions(int subjectId, const char* topic) {
   quizState.totalLoaded = 0;
   quizState.currentIdx  = 0;
   quizState.selectedOpt = 0;
@@ -2320,10 +2400,13 @@ void fetchQuizQuestions(int subjectId) {
   if (!companionReady) return;
 
   HTTPClient http;
-  char url[128];
+  char url[192];
+  // URL-encode the topic: spaces become %20. For simplicity we pass as-is;
+  // Flask's request.args handles basic percent-encoding automatically.
   snprintf(url, sizeof(url),
-    "http://%s:%d/api/quiz/questions?subject_id=%d&session_id=%d",
-    COMP_SERVER_IP, COMP_SERVER_PORT, subjectId, serverSessionId);
+    "http://%s:%d/api/quiz/questions?subject_id=%d&topic=%s&session_id=%d",
+    COMP_SERVER_IP, COMP_SERVER_PORT, subjectId,
+    topic ? topic : "", serverSessionId);
 
   http.begin(url);
   http.setTimeout(COMP_TIMEOUT_MS);
@@ -2339,7 +2422,6 @@ void fetchQuizQuestions(int subjectId) {
   http.end();
 
   // Parse response: {"questions":[{"id":1,"q":"...","o":["A","B","C","D"],"c":2},...]}
-  // Use a large DynamicJsonDocument — 10 questions × ~300 bytes each
   DynamicJsonDocument doc(4096);
   DeserializationError err = deserializeJson(doc, body);
   if (err) {
@@ -2398,6 +2480,31 @@ void renderQuizSubject() {
     M5.Display.setTextColor(i==quizSubjectIdx?BLACK:WHITE,
                             i==quizSubjectIdx?WHITE:BLACK);
     M5.Display.printf(" %s\n", subjects[i]);
+  }
+  M5.Display.setTextColor(WHITE,BLACK);
+  drawFooter("[A] Kitar","[B] Pilih");
+}
+
+// renderQuizTopic — v9.3: topic picker after subject selected
+void renderQuizTopic() {
+  clearDisplay();
+  drawHeader("Pilih Topik", 0x1F5F);
+  M5.Display.setTextSize(1); M5.Display.setCursor(0,22);
+  M5.Display.setTextColor(DARKGREY,BLACK);
+  M5.Display.printf("%s\n\n", subjects[quizSubjectIdx]);
+  M5.Display.setTextColor(WHITE,BLACK);
+  if (quizTopicCount == 0) {
+    M5.Display.setTextColor(ORANGE,BLACK);
+    M5.Display.println("Tiada topik tersedia");
+    M5.Display.setTextColor(WHITE,BLACK);
+  } else {
+    for (int i=0;i<quizTopicCount;i++) {
+      M5.Display.setTextColor(i==quizTopicIdx?BLACK:WHITE,
+                              i==quizTopicIdx?WHITE:BLACK);
+      // Truncate long topic names to fit display width
+      char trunc[28]; strlcpy(trunc, quizTopics[i], 28);
+      M5.Display.printf(" %s\n", trunc);
+    }
   }
   M5.Display.setTextColor(WHITE,BLACK);
   drawFooter("[A] Kitar","[B] Pilih");
@@ -2504,13 +2611,13 @@ void setup() {
   auto cfg = M5.config();
   M5.begin(cfg);
   Serial.begin(115200);
-  Serial.println("[BOOT] StudyAid v9.2 starting...");
+  Serial.println("[BOOT] StudyAid v9.3 starting...");
   Serial.println("[BOOT] Hardware: M5StickS3 + M5 Unit NFC (ST25R3916)");
 
   M5.Display.setRotation(3);
   clearDisplay();
   M5.Display.setTextSize(2); M5.Display.setCursor(30,30); M5.Display.println("StudyAid");
-  M5.Display.setTextSize(1); M5.Display.setCursor(70,58); M5.Display.println("v9.2");
+  M5.Display.setTextSize(1); M5.Display.setCursor(70,58); M5.Display.println("v9.3");
   delay(1000);
 
   // Speaker volume — set once at boot

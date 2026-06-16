@@ -152,21 +152,22 @@ def init_db(app):
 
 
 # 8 core SPM subjects to seed on first run.
+# Order must match firmware subjects[] array (device index 0-7 = DB ID 1-8).
 _SEED_SUBJECTS = [
-    {"name_bm": "Bahasa Melayu",       "name_en": "Malay Language",     "default_lang": "bm"},
-    {"name_bm": "Bahasa Inggeris",     "name_en": "English",            "default_lang": "en"},
-    {"name_bm": "Matematik",           "name_en": "Mathematics",        "default_lang": "bm"},
-    {"name_bm": "Sains",               "name_en": "Science",            "default_lang": "bm"},
-    {"name_bm": "Sejarah",             "name_en": "History",            "default_lang": "bm"},
-    {"name_bm": "Geografi",            "name_en": "Geography",          "default_lang": "bm"},
-    {"name_bm": "Pendidikan Islam",    "name_en": "Islamic Studies",    "default_lang": "bm"},
-    {"name_bm": "Pendidikan Moral",    "name_en": "Moral Education",    "default_lang": "bm"},
+    {"name_bm": "Bahasa Melayu",    "name_en": "Malay Language",  "default_lang": "bm"},
+    {"name_bm": "Matematik",        "name_en": "Mathematics",     "default_lang": "bm"},
+    {"name_bm": "Sejarah",          "name_en": "History",         "default_lang": "bm"},
+    {"name_bm": "Geografi",         "name_en": "Geography",       "default_lang": "bm"},
+    {"name_bm": "Pendidikan Islam", "name_en": "Islamic Studies", "default_lang": "bm"},
+    {"name_bm": "Fizik",            "name_en": "Physics",         "default_lang": "bm"},
+    {"name_bm": "Kimia",            "name_en": "Chemistry",       "default_lang": "bm"},
+    {"name_bm": "Biologi",          "name_en": "Biology",         "default_lang": "bm"},
 ]
 
 # 2 demo students for prototype testing.
 _SEED_STUDENTS = [
-    {"name": "Ali bin Ahmad",     "class_name": "5A", "device_id": "studyaid-01"},
-    {"name": "Siti binti Hassan", "class_name": "5A", "device_id": "studyaid-02"},
+    {"name": "Muhammad Khalish", "class_name": "5A", "device_id": "studyaid-01"},
+    {"name": "Rania Batrisyia",  "class_name": "5A", "device_id": "studyaid-02"},
 ]
 
 
