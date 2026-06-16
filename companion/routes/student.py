@@ -218,6 +218,16 @@ def _build_dashboard(student):
     }
 
 
+# ── Live session monitor ──────────────────────────────────────────────────────
+@student_bp.route("/live")
+def live():
+    student  = _get_student()
+    students = _all_students()
+    return render_template("student/live.html",
+                           student=student,
+                           students=students)
+
+
 # ── Home / Dashboard ──────────────────────────────────────────────────────────
 @student_bp.route("/")
 def home():

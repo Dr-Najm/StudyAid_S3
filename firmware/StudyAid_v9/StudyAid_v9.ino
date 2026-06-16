@@ -1,5 +1,5 @@
 /*
- * StudyAid Firmware v9.1
+ * StudyAid Firmware v9.2
  * Hardware: M5StickS3 + M5 Unit NFC (ST25R3916, I2C via Grove Port A)
  *
  * Button mapping:
@@ -47,6 +47,8 @@
  *           Quiz window added to Settings (1/3/5 min options)
  *           Session start now POSTs to server, gets server-side session_id
  *           Session end sends server session_id for proper DB update
+ *   v9.2  - Periodic focus score POST every 15 seconds during active session
+ *           Enables live session monitor on companion app dashboard
  */
 
 // ─── Core Libraries ────────────────────────────────────────────────────────
@@ -212,7 +214,7 @@ const unsigned long restDurationVals[]      = { 60000,   300000,  600000  };
 // deviceId       : identifies this device in session uploads (matches DB seed)
 bool        companionMode  = false;
 bool        companionReady = false;
-const char* deviceId       = "studyaid-01";   // change to "studyaid-02" for second device
+const char* deviceId       = "studyaid-02";   // change to "studyaid-02" for second device
 
 // v9: Forward declaration — postToServer() body is defined later in the file,
 // after setup(). Without this the compiler rejects the call inside endSession().
@@ -250,7 +252,12 @@ QuizState_t quizState;
 
 int quizSubjectIdx = 0;     // subject picker cursor
 
-// ─── v9.1: Drift quiz window tracking ──────────────────────────────────────
+// ─── v9.2: Periodic focus report ───────────────────────────────────────────
+// POSTs current focus score to /api/session/update every 15 seconds during
+// an active Companion mode session. Enables live monitor on dashboard.
+#define FOCUS_REPORT_INTERVAL_MS 15000UL
+
+unsigned long lastFocusReportMs = 0;
 #define MAX_WARN_BUF 8
 unsigned long warnTimestamps[MAX_WARN_BUF];
 int           warnBufCount    = 0;
@@ -934,9 +941,10 @@ void startSession(int subjectIndex) {
   addTimelineEntry(TIMELINE_READING);
 
   // v9.1: Reset drift quiz window for this session
-  warnBufCount    = 0;
-  lastDriftQuizMs = 0;
-  serverSessionId = -1;
+  warnBufCount      = 0;
+  lastDriftQuizMs   = 0;
+  serverSessionId   = -1;
+  lastFocusReportMs = 0;  // v9.2: reset focus report timer
 
   // v9: POST session start to companion server, capture server-side session ID
   if (companionReady) {
@@ -2496,13 +2504,13 @@ void setup() {
   auto cfg = M5.config();
   M5.begin(cfg);
   Serial.begin(115200);
-  Serial.println("[BOOT] StudyAid v9.1 starting...");
+  Serial.println("[BOOT] StudyAid v9.2 starting...");
   Serial.println("[BOOT] Hardware: M5StickS3 + M5 Unit NFC (ST25R3916)");
 
   M5.Display.setRotation(3);
   clearDisplay();
   M5.Display.setTextSize(2); M5.Display.setCursor(30,30); M5.Display.println("StudyAid");
-  M5.Display.setTextSize(1); M5.Display.setCursor(70,58); M5.Display.println("v9.1");
+  M5.Display.setTextSize(1); M5.Display.setCursor(70,58); M5.Display.println("v9.2");
   delay(1000);
 
   // Speaker volume — set once at boot
@@ -2608,5 +2616,23 @@ void loop() {
 
   if (millis()-lastDisplayRefresh>=DISPLAY_REFRESH_MS) {
     lastDisplayRefresh=millis(); renderCurrentScreen();
+  }
+
+  // v9.2: Periodic focus score report to companion server
+  // Fires every 15 seconds during an active Companion mode session.
+  // Uses postToServer() (fire-and-forget) so it never blocks the loop.
+  if (sessionActive && companionReady && serverSessionId >= 0) {
+    if (millis() - lastFocusReportMs >= FOCUS_REPORT_INTERVAL_MS) {
+      lastFocusReportMs = millis();
+      unsigned long elapsed = millis() - sessionStartTime - totalPausedMs;
+      StaticJsonDocument<96> upDoc;
+      upDoc["session_id"]  = serverSessionId;
+      upDoc["focus_score"] = focusScore;
+      upDoc["elapsed_sec"] = (long)(elapsed / 1000);
+      String upBody; serializeJson(upDoc, upBody);
+      postToServer("/api/session/update", upBody);
+      Serial.printf("[v9.2] Fokus dilaporkan: %d%% (sesi %d)\n",
+                    focusScore, serverSessionId);
+    }
   }
 }

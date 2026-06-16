@@ -1,0 +1,321 @@
+{% extends "base.html" %}
+{% set active = "live" %}
+{% block title %}Sesi Langsung — StudyAid{% endblock %}
+{% block content %}
+
+<!-- ── Student Switcher ──────────────────────────────────────────────────── -->
+<div style="display:flex;align-items:center;gap:0.8em;margin-bottom:1em;
+            background:#fff;border-radius:8px;padding:0.7em 1em;
+            box-shadow:0 1px 4px rgba(0,0,0,0.08)">
+  <span style="font-size:0.85em;color:#5A7080;font-weight:600;white-space:nowrap">
+    👤 Pelajar:
+  </span>
+  <select id="student-switcher"
+          onchange="switchStudent(this.value)"
+          style="border:1px solid #B0CACF;border-radius:5px;padding:0.35em 0.6em;
+                 font-size:0.95em;font-family:inherit;background:#fff;
+                 color:#0B1D3A;cursor:pointer;flex:1;max-width:280px">
+    {% for s in students %}
+    <option value="{{ s.id }}"
+            {% if s.id == student.id %}selected{% endif %}>
+      {{ s.name }} ({{ s.class_name }})
+    </option>
+    {% endfor %}
+  </select>
+</div>
+
+<!-- ── Status banner ─────────────────────────────────────────────────────── -->
+<div id="status-banner" class="card" style="margin-bottom:1.4em;
+     border-left:4px solid #9BB5CC">
+  <div style="display:flex;align-items:center;gap:0.8em">
+    <div id="live-dot" style="width:14px;height:14px;border-radius:50%;
+         background:#9BB5CC;flex-shrink:0"></div>
+    <div>
+      <div id="banner-title" style="font-weight:700;font-size:1.05em;color:#0B1D3A">
+        Menghubung...
+      </div>
+      <div id="banner-sub" style="font-size:0.85em;color:#5A7080;margin-top:0.2em">
+        Memeriksa sesi aktif
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Live content (hidden until session active) ────────────────────────── -->
+<div id="live-content" style="display:none">
+
+  <!-- Metric cards -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);
+              gap:1em;margin-bottom:1.4em">
+
+    <div class="card" style="margin:0;text-align:center">
+      <div id="val-elapsed" style="font-size:2em;font-weight:700;
+           color:#0D7C7C;font-variant-numeric:tabular-nums">
+        --:--
+      </div>
+      <div style="font-size:0.8em;color:#5A7080;margin-top:0.3em">Tempoh</div>
+      <div style="font-size:0.75em;color:#9BB5CC">masa belajar</div>
+    </div>
+
+    <div class="card" style="margin:0;text-align:center">
+      <div id="val-focus" style="font-size:2em;font-weight:700;color:#0D7C7C">
+        --
+      </div>
+      <div style="font-size:0.8em;color:#5A7080;margin-top:0.3em">Skor Fokus</div>
+      <div style="font-size:0.75em;color:#9BB5CC">dikemas kini setiap 15s</div>
+    </div>
+
+    <div class="card" style="margin:0;text-align:center">
+      <div id="val-drift" style="font-size:2em;font-weight:700;color:#0D7C7C">
+        --
+      </div>
+      <div style="font-size:0.8em;color:#5A7080;margin-top:0.3em">Gangguan</div>
+      <div style="font-size:0.75em;color:#9BB5CC">sesi ini</div>
+    </div>
+
+    <div class="card" style="margin:0;text-align:center">
+      <div id="val-quiz" style="font-size:2em;font-weight:700;color:#0D7C7C">
+        --
+      </div>
+      <div style="font-size:0.8em;color:#5A7080;margin-top:0.3em">Kuiz Dijawab</div>
+      <div style="font-size:0.75em;color:#9BB5CC">sesi ini</div>
+    </div>
+
+  </div>
+
+  <!-- Focus score bar -->
+  <div class="card" style="margin-bottom:1.4em">
+    <h2>📊 Skor Fokus Semasa</h2>
+    <div style="display:flex;align-items:center;gap:1em">
+      <div style="flex:1;background:#E8F4F4;border-radius:8px;height:24px;
+                  overflow:hidden">
+        <div id="focus-bar" style="height:24px;border-radius:8px;
+             background:#0D7C7C;width:0%;transition:width 0.6s ease"></div>
+      </div>
+      <div id="focus-pct" style="font-size:1.1em;font-weight:700;
+           color:#0D7C7C;min-width:3em;text-align:right">--%</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;
+                font-size:0.78em;color:#9BB5CC;margin-top:0.4em">
+      <span>0</span>
+      <span>25</span>
+      <span>50</span>
+      <span>75</span>
+      <span>100</span>
+    </div>
+  </div>
+
+  <!-- Drift event log -->
+  <div class="card">
+    <h2>⚠️ Log Gangguan Terkini</h2>
+    <div id="drift-log-empty" style="color:#9BB5CC;font-style:italic">
+      Tiada gangguan direkodkan lagi.
+    </div>
+    <table id="drift-log-table" style="display:none">
+      <thead>
+        <tr><th>Masa</th><th>Jenis</th></tr>
+      </thead>
+      <tbody id="drift-log-body"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- ── No session state ───────────────────────────────────────────────────── -->
+<div id="no-session" style="display:none">
+  <div class="card" style="text-align:center;padding:3em 1em">
+    <div style="font-size:3em;margin-bottom:0.4em">⏸️</div>
+    <div style="font-size:1.1em;font-weight:700;color:#0B1D3A;margin-bottom:0.4em">
+      Tiada Sesi Aktif
+    </div>
+    <div style="color:#5A7080;font-size:0.9em">
+      Mulakan sesi belajar pada peranti StudyAid untuk melihat data langsung.
+    </div>
+  </div>
+</div>
+
+<!-- ── Last updated ───────────────────────────────────────────────────────── -->
+<div style="display:flex;justify-content:space-between;align-items:center;
+            margin-top:0.5em">
+  <div style="font-size:0.78em;color:#9BB5CC">
+    Dikemas kini: <span id="last-updated">--</span>
+    &nbsp;|&nbsp; Selang: 3 saat
+  </div>
+  <button onclick="closeStale()"
+          style="font-size:0.78em;color:#9BB5CC;background:none;border:none;
+                 cursor:pointer;padding:0;text-decoration:underline">
+    Tutup sesi lapuk
+  </button>
+</div>
+
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+let currentStudentId = {{ student.id }};
+let pollInterval     = null;
+const POLL_MS        = 3000;
+
+// ── Severity label map ───────────────────────────────────────────────────────
+const severityLabel = {
+  "warning":      "Amaran",
+  "quiz_trigger": "Kuiz Dicetuskan",
+  "escalated":    "Teruk",
+};
+const severityColor = {
+  "warning":      "#856404",
+  "quiz_trigger": "#004085",
+  "escalated":    "#721C24",
+};
+const severityBg = {
+  "warning":      "#FFF3CD",
+  "quiz_trigger": "#CCE5FF",
+  "escalated":    "#F8D7DA",
+};
+
+// ── DOM refs ─────────────────────────────────────────────────────────────────
+const banner      = document.getElementById("status-banner");
+const bannerTitle = document.getElementById("banner-title");
+const bannerSub   = document.getElementById("banner-sub");
+const liveDot     = document.getElementById("live-dot");
+const liveContent = document.getElementById("live-content");
+const noSession   = document.getElementById("no-session");
+const navDot      = document.getElementById("nav-live-dot");
+
+// ── Pulse animation ───────────────────────────────────────────────────────────
+const style = document.createElement("style");
+style.textContent = `
+  @keyframes pulse {
+    0%   { opacity: 1; transform: scale(1); }
+    50%  { opacity: 0.5; transform: scale(1.3); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  .pulsing { animation: pulse 1.5s infinite; }
+`;
+document.head.appendChild(style);
+
+// ── Format elapsed ────────────────────────────────────────────────────────────
+function fmtTime(min, sec) {
+  return String(min).padStart(2,"0") + ":" + String(sec).padStart(2,"0");
+}
+
+// ── Update DOM from API response ──────────────────────────────────────────────
+function updateUI(data) {
+  document.getElementById("last-updated").textContent =
+    new Date().toLocaleTimeString("ms-MY");
+
+  if (!data.active) {
+    // No active session
+    banner.style.borderLeftColor = "#9BB5CC";
+    liveDot.style.background     = "#9BB5CC";
+    liveDot.classList.remove("pulsing");
+    navDot.style.background      = "#9BB5CC";
+    bannerTitle.textContent      = "Tiada Sesi Aktif";
+    bannerSub.textContent        = "Peranti tidak dalam sesi belajar";
+    liveContent.style.display    = "none";
+    noSession.style.display      = "block";
+    return;
+  }
+
+  // Active session
+  banner.style.borderLeftColor  = "#0D7C7C";
+  liveDot.style.background      = "#0D7C7C";
+  liveDot.classList.add("pulsing");
+  navDot.style.background       = "#0D7C7C";
+  bannerTitle.textContent       = data.student_name + " — " + data.subject;
+  bannerSub.textContent         = "Sesi bermula " + data.start_ts +
+                                   "  |  Masa berlalu: " +
+                                   fmtTime(data.elapsed_min, data.elapsed_sec);
+  liveContent.style.display     = "block";
+  noSession.style.display       = "none";
+
+  // Metric cards
+  document.getElementById("val-elapsed").textContent =
+    fmtTime(data.elapsed_min, data.elapsed_sec);
+  document.getElementById("val-focus").textContent  = data.focus_score;
+  document.getElementById("val-drift").textContent  = data.drift_count;
+  document.getElementById("val-quiz").textContent   = data.quiz_count;
+
+  // Focus bar — colour changes by score
+  const pct = Math.min(data.focus_score, 100);
+  const barColor = pct >= 70 ? "#0D7C7C" : pct >= 40 ? "#C49A22" : "#C0392B";
+  const bar = document.getElementById("focus-bar");
+  bar.style.width      = pct + "%";
+  bar.style.background = barColor;
+  document.getElementById("focus-pct").textContent  = pct + "%";
+  document.getElementById("focus-pct").style.color  = barColor;
+
+  // Drift log
+  const driftLog   = data.drift_log || [];
+  const logEmpty   = document.getElementById("drift-log-empty");
+  const logTable   = document.getElementById("drift-log-table");
+  const logBody    = document.getElementById("drift-log-body");
+
+  if (driftLog.length === 0) {
+    logEmpty.style.display = "block";
+    logTable.style.display = "none";
+  } else {
+    logEmpty.style.display = "none";
+    logTable.style.display = "table";
+    logBody.innerHTML = driftLog.map(d => {
+      const label = severityLabel[d.severity] || d.severity;
+      const color = severityColor[d.severity] || "#5A7080";
+      const bg    = severityBg[d.severity]    || "#F0F5F6";
+      return `<tr>
+        <td style="color:#5A7080">${d.ts}</td>
+        <td><span class="badge"
+          style="background:${bg};color:${color}">${label}</span></td>
+      </tr>`;
+    }).join("");
+  }
+}
+
+// ── Poll ──────────────────────────────────────────────────────────────────────
+async function poll() {
+  try {
+    const res  = await fetch("/api/live?student_id=" + currentStudentId);
+    const data = await res.json();
+    updateUI(data);
+  } catch (e) {
+    bannerTitle.textContent = "Ralat sambungan";
+    bannerSub.textContent   = "Cuba semula...";
+  }
+}
+
+// ── Switch student ────────────────────────────────────────────────────────────
+function switchStudent(id) {
+  currentStudentId = parseInt(id);
+  // Update URL without reload so back-button works
+  history.replaceState(null, "", "/student/live?student_id=" + id);
+  poll();
+}
+
+// ── Close stale sessions ──────────────────────────────────────────────────────
+async function closeStale() {
+  try {
+    const res  = await fetch("/api/session/close_stale", { method: "POST" });
+    const data = await res.json();
+    if (data.closed > 0) {
+      alert(data.closed + " sesi lapuk telah ditutup.");
+    } else {
+      alert("Tiada sesi lapuk dijumpai.");
+    }
+    poll();
+  } catch (e) {
+    alert("Ralat: " + e);
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+poll();
+pollInterval = setInterval(poll, POLL_MS);
+
+// Stop polling when tab is hidden, resume when visible (saves resources)
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    clearInterval(pollInterval);
+  } else {
+    poll();
+    pollInterval = setInterval(poll, POLL_MS);
+  }
+});
+</script>
+{% endblock %}

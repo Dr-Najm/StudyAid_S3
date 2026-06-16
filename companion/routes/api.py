@@ -289,7 +289,137 @@ def quiz_questions():
     return jsonify({"questions": questions})
 
 
-# ── Session end ──────────────────────────────────────────────────────────────
+# ── Session update — periodic focus score from device ────────────────────────
+@api_bp.route("/session/update", methods=["POST"])
+def session_update():
+    """
+    Called by device every 15 seconds during an active session.
+    Updates focus_score on the Session row so /api/live always returns
+    the latest value without waiting for session end.
+    """
+    payload     = request.get_json(silent=True) or {}
+    session_id  = payload.get("session_id")
+    focus_score = payload.get("focus_score")
+    elapsed_sec = payload.get("elapsed_sec", 0)
+
+    _log("session/update", payload)
+
+    session = db.session.get(Session, session_id) if session_id else None
+    if session and focus_score is not None:
+        session.focus_score = float(focus_score)
+        # Update active_min from elapsed_sec for live display accuracy
+        session.active_min  = max(session.active_min, int(elapsed_sec // 60))
+        db.session.commit()
+        return jsonify({"ok": True})
+
+    return jsonify({"ok": False, "error": "session not found"}), 404
+
+
+# ── Live session status — polled by browser every 3 seconds ──────────────────
+@api_bp.route("/live", methods=["GET"])
+def live():
+    """
+    Returns the current active session for a student.
+    A session is "active" when end_ts IS NULL (started but not ended).
+    Polled by /student/live every 3 seconds via JS fetch.
+    """
+    student_id = request.args.get("student_id", type=int)
+
+    # Resolve student
+    if student_id:
+        student = db.session.get(Student, student_id)
+    else:
+        student = Student.query.order_by(Student.id).first()
+
+    if not student:
+        return jsonify({"active": False, "error": "student not found"})
+
+    # Find active session (end_ts is NULL)
+    # Guard: treat sessions open for more than 8 hours as stale (device crashed,
+    # WiFi dropped, or session/end POST failed). Auto-close them.
+    MAX_SESSION_HOURS = 8
+    active_session = (Session.query
+        .filter_by(student_id=student.id)
+        .filter(Session.end_ts == None)  # noqa: E711
+        .order_by(Session.start_ts.desc())
+        .first())
+
+    if active_session:
+        age_hours = (datetime.utcnow() - active_session.start_ts).total_seconds() / 3600
+        if age_hours > MAX_SESSION_HOURS:
+            # Auto-close stale session
+            active_session.end_ts = datetime.utcnow()
+            db.session.commit()
+            _log("live", f"Sesi {active_session.id} ditutup secara automatik "
+                          f"(terbuka {age_hours:.1f} jam)")
+            active_session = None
+
+    if not active_session:
+        return jsonify({"active": False})
+
+    # Compute elapsed time server-side
+    now         = datetime.utcnow()
+    elapsed_sec = int((now - active_session.start_ts).total_seconds())
+    elapsed_min = elapsed_sec // 60
+    elapsed_s   = elapsed_sec % 60
+
+    # Subject name
+    subj = db.session.get(Subject, active_session.subject_id)
+    subject_name = subj.name_bm if subj else f"Subjek {active_session.subject_id}"
+
+    # Drift events this session
+    drift_events_raw = (DriftEvent.query
+        .filter_by(session_id=active_session.id)
+        .order_by(DriftEvent.ts.desc())
+        .all())
+    drift_count = len(drift_events_raw)
+
+    # Last 5 drift events for the log
+    drift_log = [{
+        "ts":       d.ts.strftime("%H:%M:%S"),
+        "severity": d.severity,
+    } for d in drift_events_raw[:5]]
+
+    # Quiz answers this session
+    quiz_count = QuizAnswer.query.filter_by(
+        session_id=active_session.id).count()
+
+    return jsonify({
+        "active":       True,
+        "session_id":   active_session.id,
+        "student_name": student.name,
+        "subject":      subject_name,
+        "start_ts":     active_session.start_ts.strftime("%H:%M"),
+        "elapsed_min":  elapsed_min,
+        "elapsed_sec":  elapsed_s,
+        "focus_score":  round(active_session.focus_score),
+        "drift_count":  drift_count,
+        "quiz_count":   quiz_count,
+        "drift_log":    drift_log,
+    })
+
+
+# ── Close stale sessions — call this if live monitor gets stuck ──────────────
+@api_bp.route("/session/close_stale", methods=["POST"])
+def close_stale():
+    """
+    Closes all sessions where end_ts IS NULL.
+    Call this from browser console or curl if the live monitor shows a session
+    that has already ended on the device:
+        fetch('/api/session/close_stale', {method:'POST'})
+    """
+    stale = Session.query.filter(Session.end_ts == None).all()  # noqa: E711
+    count = len(stale)
+    now   = datetime.utcnow()
+    for s in stale:
+        s.end_ts = now
+    if stale:
+        db.session.commit()
+    _log("close_stale", f"{count} sesi lapuk ditutup")
+    return jsonify({"ok": True, "closed": count})
+
+
+# ── Session end ───────────────────────────────────────────────────────────────
 @api_bp.route("/session/end", methods=["POST"])
 def session_end():
     payload     = request.get_json(silent=True) or {}
@@ -315,11 +445,27 @@ def session_end():
     end_dt   = now
     start_dt = now - duration if duration.total_seconds() > 0 else now
 
-    # Update existing Session row if session_id provided, else create new
-    session = db.session.get(Session, session_id) if session_id else None
+    # Normalise session_id: device sends -1 if server session was never assigned.
+    valid_sid = session_id if (session_id and session_id > 0) else None
+
+    # Find the session to close.
+    # 1. Try the explicit session_id from the device.
+    # 2. Fall back to the most recent OPEN session for this student
+    #    (handles the case where serverSessionId was lost/never assigned).
+    session = db.session.get(Session, valid_sid) if valid_sid else None
+    if not session:
+        session = (Session.query
+            .filter_by(student_id=student.id)
+            .filter(Session.end_ts == None)  # noqa: E711
+            .order_by(Session.start_ts.desc())
+            .first())
+        if session:
+            _log("session/end",
+                 f"session_id={session_id} tidak sah, menutup sesi terbuka "
+                 f"terkini (ID {session.id})")
+
     if session:
         if session.start_ts and session.start_ts.year > 1970:
-            # Keep original start_ts if it was set correctly
             start_dt = session.start_ts
         else:
             session.start_ts = start_dt
@@ -327,6 +473,7 @@ def session_end():
         session.active_min  = active_min
         session.idle_min    = idle_min
         session.focus_score = focus_score
+        _log("session/end", f"Sesi {session.id} DITUTUP (end_ts={end_dt})")
     else:
         session = Session(
             student_id  = student.id,
@@ -338,6 +485,7 @@ def session_end():
             focus_score = focus_score,
         )
         db.session.add(session)
+        _log("session/end", "Tiada sesi terbuka — cipta sesi baharu yang sudah ditutup")
 
     db.session.commit()
     _log("session/end", f"Sesi ID {session.id} disimpan untuk {student.name}")
