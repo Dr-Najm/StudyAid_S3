@@ -55,18 +55,22 @@
  *           Quiz Mode: topic picker screen added between subject and question
  *           New API call: GET /api/quiz/topics?subject_id=X
  *   v10.0 - Focus-first redesign (Part 1): honest posture & engagement sensing
- *           New PostureState enum: POSTURE_TEGAK/LINTANG/STATIK/GERAK
- *           New EngagementState enum: ENGAGED/UNCERTAIN/DISENGAGED (advisory)
- *           getMagVariance(): motion variance over magWindow to distinguish
- *           rhythmic productive motion from irregular restless motion
- *           classifyPosture(): combines pitch orientation + motion variance
- *           updateEngagement(): infers engagement from posture patterns
- *           Posture hysteresis: label only changes after N consistent samples
- *           Calibration extended: Phase 2 captures productive variance baseline
- *           On-screen posture display on active session screen (posture prominent,
- *           engagement soft/secondary)
+ *           Two-axis posture model (v10.0c):
+ *             MOTION axis: STATIK (still) / AKTIF (moving) from magnitude
+ *             ORIENT axis: LINTANG (flat) / TEGAK (vertical) from X-axis gravity
+ *           Displayed together e.g. "Aktif Lintang" (writing), "Statik Tegak"
+ *           Orientation read from accelerometer ax (gravity projection) —
+ *           hardware-measured: flat ax~0, vertical ax~0.75+; threshold 0.4
+ *           Motion threshold 0.015 (above BMI270 resting noise floor 0.002-0.008)
+ *           EngagementState (advisory): AKTIF->Fokus, STATIK->Tidak Pasti
+ *             Option A: motion-based only. Wrist IMU cannot detect silent phone
+ *             scrolling (thumb moves, wrist still) so no phone-use claim made.
+ *             DISENGAGED reserved for Part 2 (adds time dimension).
+ *           Per-axis hysteresis (POSTURE_HYSTERESIS) prevents display flicker
+ *           Calibration Phase 2 captures variance baseline (retained for Part 2)
+ *           On-screen: posture prominent, engagement soft/secondary
  *           Honest relabeling: "Tertidur!" -> "Tidak Aktif"
- *           NOTE: Posture signal is additive in Part 1 — existing IMUState warning
+ *           NOTE: posture is additive in Part 1 — existing IMUState warning
  *           logic unchanged. Posture gates the warning ladder in Part 2.
  */
 
@@ -120,17 +124,26 @@ const char*    stateColorsHex[] = { "#4CAF50","#00BCD4","#FF9800","#F44336" };
 const uint16_t lcdStateColors[] = { GREEN, CYAN, ORANGE, RED };
 
 // ─── v10.0: Posture & Engagement States ────────────────────────────────────
-// PostureState: four literal wrist states read directly from the IMU.
-// These are honest sensor readouts — no interpretation of mental state.
-//   TEGAK   : forearm tilted upward (pitch high) — e.g. phone in hand
-//   LINTANG : forearm horizontal / flat on desk (pitch near level)
-//   STATIK  : minimal movement regardless of orientation
-//   GERAK   : active motion detected
-// EngagementState: inferred from posture patterns over time (advisory only).
-// In Part 1 this drives the on-screen display but does NOT affect IMUState,
-// warningCount, or focusScore — that coupling arrives in Part 2.
-enum PostureState    { POSTURE_TEGAK, POSTURE_LINTANG, POSTURE_STATIK, POSTURE_GERAK };
-const char* postureNames[]    = { "Tegak", "Lintang", "Statik", "Gerak" };
+// v10.0c: Two-axis posture model. Posture is described by two independent axes:
+//   MOTION axis      : STATIK (still) vs AKTIF (moving)
+//   ORIENTATION axis : LINTANG (forearm flat) vs TEGAK (forearm vertical)
+// These combine into readouts like "Aktif Lintang" (writing) or
+// "Statik Tegak" (phone held still). Both are honest direct sensor readings.
+//
+// Orientation is read from the accelerometer's X axis (gravity projection):
+//   flat on desk -> gravity on Z (ax near 0)  -> LINTANG
+//   forearm up   -> gravity on X (ax high)     -> TEGAK
+// This is far more robust than pitch angle, which barely moved on the BMI270.
+//
+// EngagementState: inferred from MOTION only (Option A — no phone detection).
+//   AKTIF  -> ENGAGED   (student is physically doing something)
+//   STATIK -> UNCERTAIN (still does not mean disengaged — reading/thinking)
+// Advisory in Part 1: drives display only, not IMUState/warning/focusScore.
+enum MotionState      { MOTION_STATIK, MOTION_AKTIF };
+enum OrientationState { ORIENT_LINTANG, ORIENT_TEGAK };
+const char* motionNames[]      = { "Statik", "Aktif" };
+const char* orientationNames[] = { "Lintang", "Tegak" };
+
 enum EngagementState { ENGAGED, UNCERTAIN, DISENGAGED };
 const char* engagementNames[] = { "Fokus", "Tidak Pasti", "Tidak Fokus" };
 #define TIMELINE_ACTIVE   0
@@ -320,9 +333,10 @@ void renderQuizSummary();
 void handleDriftQuizResponse(const String& responseBody);
 
 // v10.0: Forward declarations for posture/engagement functions
-float        getMagVariance();
-PostureState classifyPosture();
-void         updateEngagement();
+float            getMagVariance();
+MotionState      classifyMotion();
+OrientationState classifyOrientation();
+void             updateEngagement();
 
 // ─── NFC (M5UnitUnifiedNFC) ────────────────────────────────────────────────
 //
@@ -419,28 +433,31 @@ bool          flashState        = false;
 #define IMU_WINDOW_SIZE 15
 float magWindow[IMU_WINDOW_SIZE]   = {0};
 float pitchWindow[IMU_WINDOW_SIZE] = {0};
+float axWindow[IMU_WINDOW_SIZE]    = {0};  // v10.0c: X-axis for orientation (gravity)
 int   imuWindowIdx  = 0;
 bool  imuWindowFull = false;
 
 // ─── v10.0: Posture & Engagement globals ───────────────────────────────────
-PostureState    currentPosture     = POSTURE_STATIK;
-EngagementState currentEngagement  = UNCERTAIN;
+// v10.0c: Two-axis model — motion and orientation tracked independently.
+MotionState      currentMotion      = MOTION_STATIK;
+OrientationState currentOrientation = ORIENT_LINTANG;
+EngagementState  currentEngagement  = UNCERTAIN;
 
-// Hysteresis: posture label only commits after POSTURE_HYSTERESIS consecutive
+// Hysteresis: each axis only commits after POSTURE_HYSTERESIS consecutive
 // samples agree. Prevents flickering on the display during brief transitions.
 // TODO: tune on BMI270 hardware — increase if label flickers, decrease if sluggish
 #define POSTURE_HYSTERESIS 5
-int          postureHoldCount  = 0;
-PostureState postureCandidate  = POSTURE_STATIK;
+int              motionHoldCount     = 0;
+int              orientHoldCount     = 0;
+MotionState      motionCandidate     = MOTION_STATIK;
+OrientationState orientCandidate     = ORIENT_LINTANG;
 
 // Productive motion variance baseline — learned during calibration Phase 2.
-// Below this, motion is considered rhythmic/productive (e.g. writing).
-// Above this, motion is irregular/restless.
-// TODO: tune on BMI270 hardware — observe Serial [IMU] var= during writing
+// Retained for Part 2 adaptive use; not used by Part 1 engagement (Option A).
 float calVarianceBaseline = 0.020f;  // starting value; overwritten by calibration
 
-// Engagement hold timer: how long a posture pattern must persist before
-// engagement state commits. Prevents noise from instant transitions.
+// Engagement hold timer: how long a motion state must persist before
+// engagement commits. Prevents noise from instant transitions.
 #define ENGAGEMENT_HOLD_MS 3000UL
 unsigned long engagementHoldStart = 0;
 EngagementState engagementCandidate = UNCERTAIN;
@@ -679,6 +696,7 @@ float getRawMag() {
 
 void updateIMUWindow() {
   float ax,ay,az; M5.Imu.getAccel(&ax,&ay,&az);
+  axWindow[imuWindowIdx]=ax;  // v10.0c: X axis tracked for orientation (gravity projection)
   magWindow[imuWindowIdx]=abs(sqrt(ax*ax+ay*ay+az*az)-1.0f);
   pitchWindow[imuWindowIdx]=atan2(ay,az)*180.0/PI;
   imuWindowIdx=(imuWindowIdx+1)%IMU_WINDOW_SIZE;
@@ -712,77 +730,52 @@ float getMagVariance() {
   return varSum / count;
 }
 
-// getAvgPitch — average pitch angle from pitchWindow.
-// Positive pitch = forearm tilting upward (toward Tegak).
-// Near zero = forearm flat / horizontal (Lintang).
-// TODO: observe Serial [IMU] pitch= at different wrist angles on BMI270.
-//       Adjust PITCH_TEGAK_THRESHOLD to match the natural upright phone-hold angle.
-float getAvgPitch() {
+// getAvgAx — average X-axis accelerometer reading from axWindow.
+// This is the gravity projection used for orientation detection.
+// Hardware-measured reference values (BMI270 on M5StickS3 wrist mount):
+//   flat on desk (Lintang)   : ax near 0    (-0.03 to 0.01)
+//   forearm vertical (Tegak) : ax high      (0.75 to 0.86)
+// Threshold of 0.4 sits in the clean gap between the two.
+float getAvgAx() {
   int count = imuWindowFull ? IMU_WINDOW_SIZE : max(imuWindowIdx, 1);
   float sum = 0;
-  for (int i = 0; i < count; i++) sum += pitchWindow[i];
+  for (int i = 0; i < count; i++) sum += axWindow[i];
   return sum / count;
 }
 
-// classifyPosture — four literal wrist states from orientation + motion.
-// Decision tree:
-//   1. Low motion (below low threshold) -> STATIK regardless of orientation.
-//   2. Moving + forearm upright (pitch > TEGAK threshold) -> TEGAK.
-//   3. Moving + forearm flat -> GERAK (active flat motion, e.g. writing).
-//   4. Ambiguous low motion + flat -> LINTANG (resting flat, not quite static).
-//
-// THRESHOLDS — all marked TODO for BMI270 hardware tuning:
-//   POSTURE_MOTION_LOW  : below this = no meaningful motion -> STATIK or LINTANG
-//   POSTURE_PITCH_TEGAK : pitch above this = forearm noticeably upright -> TEGAK
-//
-// TODO: Flash to hardware and observe Serial output:
-//   - Hold wrist flat on desk  -> expect LINTANG or STATIK
-//   - Write/move on desk       -> expect GERAK
-//   - Hold phone up            -> expect TEGAK
-//   Adjust thresholds until each posture classifies correctly.
-#define POSTURE_MOTION_LOW   0.08f   // TODO: tune on BMI270 — below = no motion
-#define POSTURE_PITCH_TEGAK  25.0f   // TODO: tune on BMI270 — degrees above horizontal
+// classifyMotion — STATIK (still) vs AKTIF (moving) from smoothed magnitude.
+// MOTION_LOW threshold tuned to BMI270 resting noise floor (0.002-0.008).
+#define MOTION_AKTIF_THRESHOLD 0.03f  // tuned: above resting noise floor
 
-PostureState classifyPosture() {
-  float mag   = getSmoothedMag();
-  float pitch = getAvgPitch();
-
-  if (mag < POSTURE_MOTION_LOW) {
-    // Very little motion — distinguish flat-rest from just-static
-    if (abs(pitch) < POSTURE_PITCH_TEGAK) return POSTURE_LINTANG;  // flat and still
-    return POSTURE_STATIK;                                           // other orientation, still
-  }
-  // Moving
-  if (pitch > POSTURE_PITCH_TEGAK) return POSTURE_TEGAK;   // forearm up
-  return POSTURE_GERAK;                                      // active flat motion
+MotionState classifyMotion() {
+  return (getSmoothedMag() >= MOTION_AKTIF_THRESHOLD) ? MOTION_AKTIF : MOTION_STATIK;
 }
 
-// updateEngagement — infer engagement from posture patterns over time.
-// Advisory only in v10 Part 1: updates currentEngagement but does NOT affect
-// IMUState, warningCount, or focusScore. That coupling arrives in Part 2.
+// classifyOrientation — LINTANG (flat) vs TEGAK (vertical) from X-axis gravity.
+// ORIENT_TEGAK threshold sits in the gap between hardware-measured flat (~0)
+// and vertical (~0.75+) positions.
+#define ORIENT_TEGAK_THRESHOLD 0.4f   // tuned: ax above this = forearm vertical
+
+OrientationState classifyOrientation() {
+  return (getAvgAx() >= ORIENT_TEGAK_THRESHOLD) ? ORIENT_TEGAK : ORIENT_LINTANG;
+}
+
+// updateEngagement — Option A: engagement inferred from MOTION only.
+// The wrist IMU cannot detect silent phone scrolling (thumb moves, wrist
+// stays still), so we make no phone-use claim. Orientation does not affect
+// engagement — only whether the student is actively moving.
 //
-// Rules:
-//   GERAK + variance below calVarianceBaseline -> rhythmic productive motion
-//     (writing, typing) -> ENGAGED
-//   TEGAK + high variance -> likely phone, irregular -> DISENGAGED
-//   Long STATIK or LINTANG without productive motion -> UNCERTAIN
-//   Everything else -> UNCERTAIN
+//   AKTIF  -> ENGAGED   (writing, working — the reliable signal)
+//   STATIK -> UNCERTAIN (reading/thinking is legitimate; not penalised)
 //
-// A candidate engagement state must hold for ENGAGEMENT_HOLD_MS before
-// currentEngagement commits, preventing rapid oscillation on the display.
+// DISENGAGED is not asserted in Part 1; the warning ladder in Part 2 adds
+// the TIME dimension (still for too long) that justifies it.
+// Advisory only: drives display, not IMUState/warning/focusScore.
 void updateEngagement() {
-  float var = getMagVariance();
-  EngagementState candidate;
+  EngagementState candidate =
+    (currentMotion == MOTION_AKTIF) ? ENGAGED : UNCERTAIN;
 
-  if (currentPosture == POSTURE_GERAK && var <= calVarianceBaseline) {
-    candidate = ENGAGED;      // rhythmic flat motion = writing/typing
-  } else if (currentPosture == POSTURE_TEGAK && var > calVarianceBaseline) {
-    candidate = DISENGAGED;   // forearm up + irregular = likely phone
-  } else {
-    candidate = UNCERTAIN;
-  }
-
-  // Hold-timer: only commit if candidate is stable for ENGAGEMENT_HOLD_MS
+  // Hold-timer: candidate must persist for ENGAGEMENT_HOLD_MS before committing.
   if (candidate != engagementCandidate) {
     engagementCandidate = candidate;
     engagementHoldStart = millis();
@@ -836,20 +829,19 @@ void updateIMUState() {
   float mag=getSmoothedMag();
   bool  moving=(mag>calMagnitudeThresholdHigh);
 
-  // ── v10.0: Posture classification with hysteresis ──────────────────────
-  // classifyPosture() runs every IMU cycle. The result only commits to
-  // currentPosture after POSTURE_HYSTERESIS consecutive agreeing samples,
-  // preventing flickering on the display from momentary sensor noise.
-  PostureState rawPosture = classifyPosture();
-  if (rawPosture == postureCandidate) {
-    postureHoldCount++;
-    if (postureHoldCount >= POSTURE_HYSTERESIS) {
-      currentPosture = rawPosture;
-    }
-  } else {
-    postureCandidate = rawPosture;
-    postureHoldCount = 1;
-  }
+  // ── v10.0c: Two-axis posture classification with hysteresis ────────────
+  // Motion and orientation each classified independently, each committing
+  // only after POSTURE_HYSTERESIS consecutive agreeing samples to prevent
+  // display flicker from momentary sensor noise.
+  MotionState rawMotion = classifyMotion();
+  if (rawMotion == motionCandidate) {
+    if (++motionHoldCount >= POSTURE_HYSTERESIS) currentMotion = rawMotion;
+  } else { motionCandidate = rawMotion; motionHoldCount = 1; }
+
+  OrientationState rawOrient = classifyOrientation();
+  if (rawOrient == orientCandidate) {
+    if (++orientHoldCount >= POSTURE_HYSTERESIS) currentOrientation = rawOrient;
+  } else { orientCandidate = rawOrient; orientHoldCount = 1; }
 
   // ── v10.0: Engagement inference (advisory — no effect on scoring yet) ──
   updateEngagement();
@@ -858,11 +850,10 @@ void updateIMUState() {
   static unsigned long lastMagLog=0;
   if (millis()-lastMagLog>=2000) {
     lastMagLog=millis();
-    Serial.printf("[IMU] mag=%.3f var=%.4f pitch=%.1f thresh=%.3f "
-                  "postur=%s engage=%s state=%s\n",
-      mag, getMagVariance(), getAvgPitch(), calMagnitudeThresholdHigh,
-      postureNames[currentPosture], engagementNames[currentEngagement],
-      stateNames[currentState]);
+    Serial.printf("[IMU] mag=%.3f ax=%.3f thresh=%.3f postur=%s %s engage=%s state=%s\n",
+      mag, getAvgAx(), calMagnitudeThresholdHigh,
+      motionNames[currentMotion], orientationNames[currentOrientation],
+      engagementNames[currentEngagement], stateNames[currentState]);
   }
 
   if (moving) {
@@ -1398,13 +1389,13 @@ void renderHome() {
     M5.Display.printf("%s\n",subjects[currentSubject]);
     M5.Display.printf("Masa: %s\n",formatTime(elapsed).c_str());
     M5.Display.printf("Markah: %d  |  Gang: %d\n",focusScore,distractionCount);
-    // v10.0: Live posture display (prominent) + engagement (soft/secondary)
-    // Posture is a direct sensor reading — show confidently.
-    // Engagement is an inference — show softly so a mismatch isn't alarming.
+    // v10.0c: Live posture display — two axes (motion + orientation) prominent,
+    // engagement (inference) shown soft/secondary. e.g. "Postur: Aktif Lintang"
     M5.Display.setTextColor(WHITE,BLACK);
-    M5.Display.printf("Postur: %s",postureNames[currentPosture]);
+    M5.Display.printf("Postur: %s %s",
+      motionNames[currentMotion], orientationNames[currentOrientation]);
     M5.Display.setTextColor(DARKGREY,BLACK);
-    M5.Display.printf("  [%s]\n",engagementNames[currentEngagement]);
+    M5.Display.printf(" [%s]\n",engagementNames[currentEngagement]);
     M5.Display.setTextColor(DARKGREY,BLACK);
     M5.Display.printf("A:-%d T:-%d P:+%d D:+%d\n",
       warningCount*3,sleepingCount*8,recoveryBonus,durationBonus);
