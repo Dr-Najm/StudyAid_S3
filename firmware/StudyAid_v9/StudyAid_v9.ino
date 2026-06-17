@@ -1,5 +1,5 @@
 /*
- * StudyAid Firmware v9.3
+ * StudyAid Firmware v10.0
  * Hardware: M5StickS3 + M5 Unit NFC (ST25R3916, I2C via Grove Port A)
  *
  * Button mapping:
@@ -54,6 +54,20 @@
  *           Sains, Pendidikan Moral
  *           Quiz Mode: topic picker screen added between subject and question
  *           New API call: GET /api/quiz/topics?subject_id=X
+ *   v10.0 - Focus-first redesign (Part 1): honest posture & engagement sensing
+ *           New PostureState enum: POSTURE_TEGAK/LINTANG/STATIK/GERAK
+ *           New EngagementState enum: ENGAGED/UNCERTAIN/DISENGAGED (advisory)
+ *           getMagVariance(): motion variance over magWindow to distinguish
+ *           rhythmic productive motion from irregular restless motion
+ *           classifyPosture(): combines pitch orientation + motion variance
+ *           updateEngagement(): infers engagement from posture patterns
+ *           Posture hysteresis: label only changes after N consistent samples
+ *           Calibration extended: Phase 2 captures productive variance baseline
+ *           On-screen posture display on active session screen (posture prominent,
+ *           engagement soft/secondary)
+ *           Honest relabeling: "Tertidur!" -> "Tidak Aktif"
+ *           NOTE: Posture signal is additive in Part 1 — existing IMUState warning
+ *           logic unchanged. Posture gates the warning ladder in Part 2.
  */
 
 // ─── Core Libraries ────────────────────────────────────────────────────────
@@ -101,11 +115,24 @@ const char* subjects[NUM_SUBJECTS] = {
 
 // ─── IMU States ────────────────────────────────────────────────────────────
 enum IMUState { STATE_ACTIVE, STATE_READING, STATE_WARNING, STATE_SLEEPING };
-const char*    stateNames[]     = { "Aktif", "Membaca", "Amaran!", "Tertidur!" };
+const char*    stateNames[]     = { "Aktif", "Membaca", "Amaran!", "Tidak Aktif" };  // v10.0: Tertidur -> Tidak Aktif
 const char*    stateColorsHex[] = { "#4CAF50","#00BCD4","#FF9800","#F44336" };
 const uint16_t lcdStateColors[] = { GREEN, CYAN, ORANGE, RED };
 
-// ─── Timeline State IDs (includes Resting) ─────────────────────────────────
+// ─── v10.0: Posture & Engagement States ────────────────────────────────────
+// PostureState: four literal wrist states read directly from the IMU.
+// These are honest sensor readouts — no interpretation of mental state.
+//   TEGAK   : forearm tilted upward (pitch high) — e.g. phone in hand
+//   LINTANG : forearm horizontal / flat on desk (pitch near level)
+//   STATIK  : minimal movement regardless of orientation
+//   GERAK   : active motion detected
+// EngagementState: inferred from posture patterns over time (advisory only).
+// In Part 1 this drives the on-screen display but does NOT affect IMUState,
+// warningCount, or focusScore — that coupling arrives in Part 2.
+enum PostureState    { POSTURE_TEGAK, POSTURE_LINTANG, POSTURE_STATIK, POSTURE_GERAK };
+const char* postureNames[]    = { "Tegak", "Lintang", "Statik", "Gerak" };
+enum EngagementState { ENGAGED, UNCERTAIN, DISENGAGED };
+const char* engagementNames[] = { "Fokus", "Tidak Pasti", "Tidak Fokus" };
 #define TIMELINE_ACTIVE   0
 #define TIMELINE_READING  1
 #define TIMELINE_WARNING  2
@@ -292,6 +319,11 @@ void renderQuizResult();
 void renderQuizSummary();
 void handleDriftQuizResponse(const String& responseBody);
 
+// v10.0: Forward declarations for posture/engagement functions
+float        getMagVariance();
+PostureState classifyPosture();
+void         updateEngagement();
+
 // ─── NFC (M5UnitUnifiedNFC) ────────────────────────────────────────────────
 //
 // The M5 Unit NFC uses the ST25R3916 chip via I2C at address 0x50.
@@ -390,6 +422,29 @@ float pitchWindow[IMU_WINDOW_SIZE] = {0};
 int   imuWindowIdx  = 0;
 bool  imuWindowFull = false;
 
+// ─── v10.0: Posture & Engagement globals ───────────────────────────────────
+PostureState    currentPosture     = POSTURE_STATIK;
+EngagementState currentEngagement  = UNCERTAIN;
+
+// Hysteresis: posture label only commits after POSTURE_HYSTERESIS consecutive
+// samples agree. Prevents flickering on the display during brief transitions.
+// TODO: tune on BMI270 hardware — increase if label flickers, decrease if sluggish
+#define POSTURE_HYSTERESIS 5
+int          postureHoldCount  = 0;
+PostureState postureCandidate  = POSTURE_STATIK;
+
+// Productive motion variance baseline — learned during calibration Phase 2.
+// Below this, motion is considered rhythmic/productive (e.g. writing).
+// Above this, motion is irregular/restless.
+// TODO: tune on BMI270 hardware — observe Serial [IMU] var= during writing
+float calVarianceBaseline = 0.020f;  // starting value; overwritten by calibration
+
+// Engagement hold timer: how long a posture pattern must persist before
+// engagement state commits. Prevents noise from instant transitions.
+#define ENGAGEMENT_HOLD_MS 3000UL
+unsigned long engagementHoldStart = 0;
+EngagementState engagementCandidate = UNCERTAIN;
+
 // Timeline
 TimelineEntry timeline[MAX_TIMELINE_ENTRIES];
 int           timelineCount = 0;
@@ -450,6 +505,11 @@ void loadSettingsFromNVS() {
   // v9: load companion mode flag
   companionMode = prefs.getBool("comp_mode", false);
   Serial.printf("[v9] Mod: %s\n", companionMode ? "Rakan (Companion)" : "Solo");
+  // v10.0: load productive variance baseline from calibration Phase 2
+  if (prefs.isKey("cal_var")) {
+    calVarianceBaseline = prefs.getFloat("cal_var", 0.020f);
+    Serial.printf("[v10] varBaseline=%.4f\n", calVarianceBaseline);
+  }
 }
 
 void loadHistoryFromNVS() {
@@ -632,6 +692,106 @@ float getSmoothedMag() {
   return (peak*0.6f)+((sum/count)*0.4f);
 }
 
+// ─── v10.0: Variance, Posture & Engagement ─────────────────────────────────
+
+// getMagVariance — compute variance of magWindow samples.
+// Low variance = steady/rhythmic motion (writing, typing).
+// High variance = irregular motion (fidgeting, restless).
+// TODO: observe Serial [IMU] var= during typical study activities on BMI270
+//       then adjust calVarianceBaseline in calibration accordingly.
+float getMagVariance() {
+  int count = imuWindowFull ? IMU_WINDOW_SIZE : max(imuWindowIdx, 1);
+  float sum = 0;
+  for (int i = 0; i < count; i++) sum += magWindow[i];
+  float mean = sum / count;
+  float varSum = 0;
+  for (int i = 0; i < count; i++) {
+    float d = magWindow[i] - mean;
+    varSum += d * d;
+  }
+  return varSum / count;
+}
+
+// getAvgPitch — average pitch angle from pitchWindow.
+// Positive pitch = forearm tilting upward (toward Tegak).
+// Near zero = forearm flat / horizontal (Lintang).
+// TODO: observe Serial [IMU] pitch= at different wrist angles on BMI270.
+//       Adjust PITCH_TEGAK_THRESHOLD to match the natural upright phone-hold angle.
+float getAvgPitch() {
+  int count = imuWindowFull ? IMU_WINDOW_SIZE : max(imuWindowIdx, 1);
+  float sum = 0;
+  for (int i = 0; i < count; i++) sum += pitchWindow[i];
+  return sum / count;
+}
+
+// classifyPosture — four literal wrist states from orientation + motion.
+// Decision tree:
+//   1. Low motion (below low threshold) -> STATIK regardless of orientation.
+//   2. Moving + forearm upright (pitch > TEGAK threshold) -> TEGAK.
+//   3. Moving + forearm flat -> GERAK (active flat motion, e.g. writing).
+//   4. Ambiguous low motion + flat -> LINTANG (resting flat, not quite static).
+//
+// THRESHOLDS — all marked TODO for BMI270 hardware tuning:
+//   POSTURE_MOTION_LOW  : below this = no meaningful motion -> STATIK or LINTANG
+//   POSTURE_PITCH_TEGAK : pitch above this = forearm noticeably upright -> TEGAK
+//
+// TODO: Flash to hardware and observe Serial output:
+//   - Hold wrist flat on desk  -> expect LINTANG or STATIK
+//   - Write/move on desk       -> expect GERAK
+//   - Hold phone up            -> expect TEGAK
+//   Adjust thresholds until each posture classifies correctly.
+#define POSTURE_MOTION_LOW   0.08f   // TODO: tune on BMI270 — below = no motion
+#define POSTURE_PITCH_TEGAK  25.0f   // TODO: tune on BMI270 — degrees above horizontal
+
+PostureState classifyPosture() {
+  float mag   = getSmoothedMag();
+  float pitch = getAvgPitch();
+
+  if (mag < POSTURE_MOTION_LOW) {
+    // Very little motion — distinguish flat-rest from just-static
+    if (abs(pitch) < POSTURE_PITCH_TEGAK) return POSTURE_LINTANG;  // flat and still
+    return POSTURE_STATIK;                                           // other orientation, still
+  }
+  // Moving
+  if (pitch > POSTURE_PITCH_TEGAK) return POSTURE_TEGAK;   // forearm up
+  return POSTURE_GERAK;                                      // active flat motion
+}
+
+// updateEngagement — infer engagement from posture patterns over time.
+// Advisory only in v10 Part 1: updates currentEngagement but does NOT affect
+// IMUState, warningCount, or focusScore. That coupling arrives in Part 2.
+//
+// Rules:
+//   GERAK + variance below calVarianceBaseline -> rhythmic productive motion
+//     (writing, typing) -> ENGAGED
+//   TEGAK + high variance -> likely phone, irregular -> DISENGAGED
+//   Long STATIK or LINTANG without productive motion -> UNCERTAIN
+//   Everything else -> UNCERTAIN
+//
+// A candidate engagement state must hold for ENGAGEMENT_HOLD_MS before
+// currentEngagement commits, preventing rapid oscillation on the display.
+void updateEngagement() {
+  float var = getMagVariance();
+  EngagementState candidate;
+
+  if (currentPosture == POSTURE_GERAK && var <= calVarianceBaseline) {
+    candidate = ENGAGED;      // rhythmic flat motion = writing/typing
+  } else if (currentPosture == POSTURE_TEGAK && var > calVarianceBaseline) {
+    candidate = DISENGAGED;   // forearm up + irregular = likely phone
+  } else {
+    candidate = UNCERTAIN;
+  }
+
+  // Hold-timer: only commit if candidate is stable for ENGAGEMENT_HOLD_MS
+  if (candidate != engagementCandidate) {
+    engagementCandidate = candidate;
+    engagementHoldStart = millis();
+  }
+  if (millis() - engagementHoldStart >= ENGAGEMENT_HOLD_MS) {
+    currentEngagement = engagementCandidate;
+  }
+}
+
 IMUState detectRawState() {
   return (getSmoothedMag()>calMagnitudeThresholdHigh)?STATE_ACTIVE:STATE_READING;
 }
@@ -676,12 +836,33 @@ void updateIMUState() {
   float mag=getSmoothedMag();
   bool  moving=(mag>calMagnitudeThresholdHigh);
 
+  // ── v10.0: Posture classification with hysteresis ──────────────────────
+  // classifyPosture() runs every IMU cycle. The result only commits to
+  // currentPosture after POSTURE_HYSTERESIS consecutive agreeing samples,
+  // preventing flickering on the display from momentary sensor noise.
+  PostureState rawPosture = classifyPosture();
+  if (rawPosture == postureCandidate) {
+    postureHoldCount++;
+    if (postureHoldCount >= POSTURE_HYSTERESIS) {
+      currentPosture = rawPosture;
+    }
+  } else {
+    postureCandidate = rawPosture;
+    postureHoldCount = 1;
+  }
+
+  // ── v10.0: Engagement inference (advisory — no effect on scoring yet) ──
+  updateEngagement();
+
+  // ── Enhanced Serial debug log every 2 seconds ──────────────────────────
   static unsigned long lastMagLog=0;
   if (millis()-lastMagLog>=2000) {
     lastMagLog=millis();
-    // Serial output useful for threshold retuning on hardware
-    Serial.printf("[IMU] mag=%.3f thresh=%.3f state=%s\n",
-      mag,calMagnitudeThresholdHigh,stateNames[currentState]);
+    Serial.printf("[IMU] mag=%.3f var=%.4f pitch=%.1f thresh=%.3f "
+                  "postur=%s engage=%s state=%s\n",
+      mag, getMagVariance(), getAvgPitch(), calMagnitudeThresholdHigh,
+      postureNames[currentPosture], engagementNames[currentEngagement],
+      stateNames[currentState]);
   }
 
   if (moving) {
@@ -911,8 +1092,10 @@ void registerTagFlow(int slotIndex) {
 // ─── Calibration ───────────────────────────────────────────────────────────
 void runCalibration() {
   buzz_calibration();
+
+  // ── Phase 1: Magnitude threshold (existing) ──────────────────────────────
   M5.Display.fillScreen(BLACK);
-  M5.Display.setCursor(0,10); M5.Display.println("Mengkalibrasi...");
+  M5.Display.setCursor(0,10); M5.Display.println("Kalibrasi — Fasa 1");
   M5.Display.setCursor(0,30); M5.Display.println("Gerak semula jadi 20s.\nTulis, baca, isyarat.");
 
   unsigned long start=millis();
@@ -936,10 +1119,48 @@ void runCalibration() {
   prefs.putFloat("cal_low", calMagnitudeThresholdLow);
   prefs.putBool("calibrated",true);
   buzz_calibration();
-  M5.Display.fillScreen(BLACK); M5.Display.setCursor(0,30);
-  M5.Display.printf("Kalibrasi Selesai!\nTinggi: %.3f\nRendah: %.3f",
+  M5.Display.fillScreen(BLACK); M5.Display.setCursor(0,20);
+  M5.Display.printf("Fasa 1 Selesai!\nTinggi: %.3f\nRendah: %.3f\n\nSiap untuk fasa 2...",
     calMagnitudeThresholdHigh,calMagnitudeThresholdLow);
   delay(2000);
+
+  // ── Phase 2: Productive variance baseline (v10.0) ────────────────────────
+  // Capture variance during natural writing/studying motion.
+  // This baseline distinguishes rhythmic productive motion (writing) from
+  // irregular restless motion — used by updateEngagement() in Part 1.
+  // TODO: if variance baseline seems wrong after testing, run calibration again
+  //       while doing typical writing/studying — not fidgeting or large gestures.
+  M5.Display.fillScreen(BLACK);
+  M5.Display.setCursor(0,10); M5.Display.println("Kalibrasi — Fasa 2");
+  M5.Display.setCursor(0,30); M5.Display.println("Tulis atau belajar\nseperti biasa...\n20 saat.");
+
+  start = millis();
+  float varSum = 0; int varSamples = 0;
+  while (millis() - start < CALIBRATION_DURATION_MS) {
+    updateIMUWindow();  // keep window fresh
+    varSum += getMagVariance();
+    varSamples++;
+    int remaining = (CALIBRATION_DURATION_MS - (millis() - start)) / 1000;
+    M5.Display.fillRect(80,100,80,16,BLACK);
+    M5.Display.setTextSize(2); M5.Display.setCursor(90,100);
+    M5.Display.printf("%ds", remaining);
+    delay(250); M5.update();
+  }
+  M5.Display.setTextSize(1);
+
+  // Store the average variance during productive motion as the baseline.
+  // Multiply by 1.5 to give a tolerance margin above typical writing variance.
+  float avgVar = varSum / max(varSamples, 1);
+  calVarianceBaseline = constrain(avgVar * 1.5f, 0.005f, 0.5f);
+  prefs.putFloat("cal_var", calVarianceBaseline);
+
+  Serial.printf("[KALIBRASI] Fasa 2 selesai. varBaseline=%.4f\n", calVarianceBaseline);
+
+  buzz_calibration();
+  M5.Display.fillScreen(BLACK); M5.Display.setCursor(0,20);
+  M5.Display.printf("Kalibrasi Selesai!\n\nFasa 1:\nTinggi: %.3f\nRendah: %.3f\n\nFasa 2:\nVar: %.4f",
+    calMagnitudeThresholdHigh, calMagnitudeThresholdLow, calVarianceBaseline);
+  delay(3000);
 }
 
 // ─── Session ───────────────────────────────────────────────────────────────
@@ -1137,7 +1358,7 @@ void renderSessionOverlay() {
     uint16_t fc=flashState?RED:MAROON;
     M5.Display.fillScreen(BLACK); M5.Display.fillRect(0,0,240,30,fc);
     M5.Display.setTextColor(WHITE,fc);
-    M5.Display.setTextSize(2); M5.Display.setCursor(10,8); M5.Display.println("!! TERTIDUR !!");
+    M5.Display.setTextSize(2); M5.Display.setCursor(10,8); M5.Display.println("!! TIDAK AKTIF !!");
     M5.Display.setTextColor(WHITE,BLACK);
     M5.Display.setTextSize(1); M5.Display.setCursor(0,40);
     M5.Display.printf("Bangun!\nGerak atau tekan [A].\nMarkah: -%d",sleepingCount*8);
@@ -1160,9 +1381,9 @@ void renderHome() {
   M5.Display.setTextColor(BLACK,hc); M5.Display.setTextSize(1);
   M5.Display.setCursor(4,6);
   if (sessionActive)
-    M5.Display.printf("StudyAid v9 | %s",stateNames[currentState]);
+    M5.Display.printf("StudyAid v10 | %s",stateNames[currentState]);
   else
-    M5.Display.print("StudyAid v9");
+    M5.Display.print("StudyAid v10");
   int bat=getBatteryLevel();
   M5.Display.setCursor(200,6);
   M5.Display.printf("%d%%",bat);
@@ -1177,6 +1398,13 @@ void renderHome() {
     M5.Display.printf("%s\n",subjects[currentSubject]);
     M5.Display.printf("Masa: %s\n",formatTime(elapsed).c_str());
     M5.Display.printf("Markah: %d  |  Gang: %d\n",focusScore,distractionCount);
+    // v10.0: Live posture display (prominent) + engagement (soft/secondary)
+    // Posture is a direct sensor reading — show confidently.
+    // Engagement is an inference — show softly so a mismatch isn't alarming.
+    M5.Display.setTextColor(WHITE,BLACK);
+    M5.Display.printf("Postur: %s",postureNames[currentPosture]);
+    M5.Display.setTextColor(DARKGREY,BLACK);
+    M5.Display.printf("  [%s]\n",engagementNames[currentEngagement]);
     M5.Display.setTextColor(DARKGREY,BLACK);
     M5.Display.printf("A:-%d T:-%d P:+%d D:+%d\n",
       warningCount*3,sleepingCount*8,recoveryBonus,durationBonus);
@@ -2611,13 +2839,13 @@ void setup() {
   auto cfg = M5.config();
   M5.begin(cfg);
   Serial.begin(115200);
-  Serial.println("[BOOT] StudyAid v9.3 starting...");
+  Serial.println("[BOOT] StudyAid v10.0 starting...");
   Serial.println("[BOOT] Hardware: M5StickS3 + M5 Unit NFC (ST25R3916)");
 
   M5.Display.setRotation(3);
   clearDisplay();
   M5.Display.setTextSize(2); M5.Display.setCursor(30,30); M5.Display.println("StudyAid");
-  M5.Display.setTextSize(1); M5.Display.setCursor(70,58); M5.Display.println("v9.3");
+  M5.Display.setTextSize(1); M5.Display.setCursor(70,58); M5.Display.println("v10.0");
   delay(1000);
 
   // Speaker volume — set once at boot
