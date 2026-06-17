@@ -1,5 +1,5 @@
 /*
- * StudyAid Firmware v10.0
+ * StudyAid Firmware v10.1
  * Hardware: M5StickS3 + M5 Unit NFC (ST25R3916, I2C via Grove Port A)
  *
  * Button mapping:
@@ -54,7 +54,21 @@
  *           Sains, Pendidikan Moral
  *           Quiz Mode: topic picker screen added between subject and question
  *           New API call: GET /api/quiz/topics?subject_id=X
- *   v10.0 - Focus-first redesign (Part 1): honest posture & engagement sensing
+ *   v10.1 - Four-stage warning ladder (Part 2):
+ *           WarnStage enum: WARN_S0/S1/S2/S3
+ *           Stage 0: engaged (no alert)
+ *           Stage 1: Watching — silent amber dot, no sound, no penalty
+ *           Stage 2: Nudge — soft single chime + inline prompt, no penalty
+ *           Stage 3: Full alert — full-screen flash + repeating buzz + -3 penalty
+ *           Escalation gated by MOTION_STATIK; MOTION_AKTIF drops to Stage 0
+ *           BtnA cycles: Stage 1/2 -> snooze; Stage 3 -> recovery
+ *           Snooze suppresses escalation for SNOOZE_MS then resumes from S0
+ *           Score penalty only at Stage 3 (warningCount++, -3)
+ *           sleepingCount kept for summary display but -8 penalty retired
+ *           Drift quiz buffer now gated to Stage 3 entries only
+ *           Demo/Real presets: #define DEMO_MODE at compile time
+ *             Demo: 5s/5s/5s/30s snooze
+ *             Real: 2min/2min/2min/5min snooze
  *           Two-axis posture model (v10.0c):
  *             MOTION axis: STATIK (still) / AKTIF (moving) from magnitude
  *             ORIENT axis: LINTANG (flat) / TEGAK (vertical) from X-axis gravity
@@ -253,7 +267,36 @@ const unsigned long deepFocusIntervalVals[] = { 300000,  600000,  1500000 };
 const float         imuSensitivityVals[]    = { 0.15f,   0.30f,   0.50f   };
 const unsigned long restDurationVals[]      = { 60000,   300000,  600000  };
 
-// ─── v9: Companion Mode State ───────────────────────────────────────────────
+// ─── v10.1: Demo / Real timing presets ─────────────────────────────────────
+// Uncomment DEMO_MODE for competition demo — all four warning stages visible
+// within seconds. Comment out for real student use (minutes-scale timings).
+// The master Demo/Real switch (Settings toggle, NVS-persisted) replaces this
+// compile-time flag in the next change list.
+#define DEMO_MODE
+
+// Real preset — humane, minutes-scale escalation
+#define REAL_STAGE1_MS  120000UL   // 2 min still before Stage 1 (Watching)
+#define REAL_STAGE2_MS  120000UL   // 2 min more before Stage 2 (Nudge)
+#define REAL_STAGE3_MS  120000UL   // 2 min more before Stage 3 (Full alert)
+#define REAL_SNOOZE_MS  300000UL   // 5 min snooze duration
+
+// Demo preset — fast, all stages visible in ~15 seconds
+#define DEMO_STAGE1_MS    5000UL   // 5s before Stage 1
+#define DEMO_STAGE2_MS    5000UL   // 5s more before Stage 2
+#define DEMO_STAGE3_MS    5000UL   // 5s more before Stage 3
+#define DEMO_SNOOZE_MS   30000UL   // 30s snooze
+
+#ifdef DEMO_MODE
+  #define STAGE1_MS DEMO_STAGE1_MS
+  #define STAGE2_MS DEMO_STAGE2_MS
+  #define STAGE3_MS DEMO_STAGE3_MS
+  #define SNOOZE_MS DEMO_SNOOZE_MS
+#else
+  #define STAGE1_MS REAL_STAGE1_MS
+  #define STAGE2_MS REAL_STAGE2_MS
+  #define STAGE3_MS REAL_STAGE3_MS
+  #define SNOOZE_MS REAL_SNOOZE_MS
+#endif
 // companionMode  : false = Solo (WiFi AP, same as v8.4)
 //                  true  = Companion (WiFi STA, uploads to Flask server)
 // companionReady : set true after successful WiFi STA connection at boot
@@ -425,9 +468,23 @@ IMUState      currentState      = STATE_READING;
 IMUState      lastState         = STATE_READING;
 unsigned long lastMovementTime  = 0;
 unsigned long warningStartTime  = 0;
-bool          inWarning         = false;
+bool          inWarning         = false;  // shim: true when currentWarnStage >= STAGE_1
 unsigned long lastSleepingBuzz  = 0;
 bool          flashState        = false;
+
+// ─── v10.1: Four-stage warning ladder ──────────────────────────────────────
+// Replaces the two-step Warning -> Sleeping escalation.
+// Stage 0: engaged / no alert
+// Stage 1: Watching (silent — subtle on-screen indicator only)
+// Stage 2: Nudge (soft chime + small prompt, no takeover, no penalty)
+// Stage 3: Full alert (full-screen flash + repeating buzz + score penalty)
+// Escalation gated by MOTION_STATIK; any MOTION_AKTIF drops to Stage 0.
+// inWarning kept as a compatibility shim for existing code.
+enum WarnStage { WARN_S0, WARN_S1, WARN_S2, WARN_S3 };
+WarnStage     currentWarnStage = WARN_S0;
+unsigned long stageEnteredMs   = 0;   // when current stage started
+bool          snoozeActive     = false;
+unsigned long snoozeStartMs    = 0;
 
 // IMU window
 #define IMU_WINDOW_SIZE 15
@@ -663,6 +720,7 @@ void buzz_sessionStart()  { speakerBeep(800,120); delay(60); speakerBeep(1000,12
 void buzz_sessionEnd()    { speakerBeep(1200,120); delay(60); speakerBeep(1000,120); delay(60); speakerBeep(800,180); }
 void buzz_calibration()   { speakerBeep(800,120); delay(60); speakerBeep(1000,120); delay(60); speakerBeep(1200,180); }
 void buzz_warning()       { speakerBeep(800,180); delay(80); speakerBeep(1100,180); delay(80); speakerBeep(1400,250); }
+void buzz_nudge()         { speakerBeep(900,120); }  // v10.1: Stage 2 soft single chime
 void buzz_sleeping()      { speakerBeep(1400,120); delay(60); speakerBeep(1100,120); delay(60); speakerBeep(1400,120); delay(60); speakerBeep(1100,200); }
 void buzz_recovery()      { speakerBeep(800,120); delay(60); speakerBeep(1000,120); delay(60); speakerBeep(1200,180); }
 void buzz_streakBonus()   { speakerBeep(1000,100); delay(60); speakerBeep(1200,100); delay(60); speakerBeep(1400,200); }
@@ -745,7 +803,7 @@ float getAvgAx() {
 
 // classifyMotion — STATIK (still) vs AKTIF (moving) from smoothed magnitude.
 // MOTION_LOW threshold tuned to BMI270 resting noise floor (0.002-0.008).
-#define MOTION_AKTIF_THRESHOLD 0.03f  // tuned: above resting noise floor
+#define MOTION_AKTIF_THRESHOLD 0.015f  // tuned: above resting noise floor
 
 MotionState classifyMotion() {
   return (getSmoothedMag() >= MOTION_AKTIF_THRESHOLD) ? MOTION_AKTIF : MOTION_STATIK;
@@ -790,16 +848,46 @@ IMUState detectRawState() {
 }
 
 // ─── Recovery ──────────────────────────────────────────────────────────────
+// v10.1: stage-aware recovery.
+// Stage 3 recovery: full buzz + possible bonus (same as before).
+// Stage 1/2 recovery: silent reset — no buzz, no bonus, no penalty was earned.
+// Stage 0: nothing to recover from.
 void handleRecovery() {
-  bool quick=inWarning&&(millis()-warningStartTime)<=10000;
-  inWarning=false; warningStartTime=0;
-  lastMovementTime=millis(); streakStartTime=millis();
-  if (currentState==STATE_WARNING||currentState==STATE_SLEEPING) {
+  if (currentWarnStage == WARN_S0) return;
+
+  bool fromStage3 = (currentWarnStage == WARN_S3);
+  bool quick = fromStage3 && (millis() - stageEnteredMs <= 10000);
+
+  // Reset stage
+  currentWarnStage = WARN_S0;
+  stageEnteredMs   = 0;
+  snoozeActive     = false;
+  snoozeStartMs    = 0;
+
+  // Compatibility shim
+  inWarning        = false;
+  warningStartTime = 0;
+
+  lastMovementTime = millis();
+  streakStartTime  = millis();
+
+  if (fromStage3) {
+    // Full recovery from Stage 3 — mirrors old STATE_WARNING/SLEEPING recovery
+    currentState = STATE_READING;
     buzz_recovery();
     addTimelineEntry(TIMELINE_READING);
-    currentState=STATE_READING;
-    if (quick) { recoveryBonus+=2; recalcFocusScore(); showNotification("+2 Bonus Pemulihan!"); }
-    Serial.println("[STATE] Pulih");
+    if (quick) {
+      recoveryBonus += 2;
+      recalcFocusScore();
+      showNotification("+2 Bonus Pemulihan!");
+    }
+    Serial.println("[WARN] Pulih dari Tahap 3");
+  } else {
+    // Silent recovery from Stage 1 or 2 — student re-engaged before alert
+    currentState = STATE_READING;
+    addTimelineEntry(TIMELINE_READING);
+    Serial.printf("[WARN] Pulih senyap dari Tahap %d\n",
+                  currentWarnStage == WARN_S1 ? 1 : 2);
   }
 }
 
@@ -850,91 +938,146 @@ void updateIMUState() {
   static unsigned long lastMagLog=0;
   if (millis()-lastMagLog>=2000) {
     lastMagLog=millis();
-    Serial.printf("[IMU] mag=%.3f ax=%.3f thresh=%.3f postur=%s %s engage=%s state=%s\n",
-      mag, getAvgAx(), calMagnitudeThresholdHigh,
+    Serial.printf("[IMU] mag=%.3f ax=%.3f postur=%s %s engage=%s state=%s stage=%d%s\n",
+      mag, getAvgAx(),
       motionNames[currentMotion], orientationNames[currentOrientation],
-      engagementNames[currentEngagement], stateNames[currentState]);
+      engagementNames[currentEngagement], stateNames[currentState],
+      (int)currentWarnStage, snoozeActive ? " [SNUZ]" : "");
   }
 
   if (moving) {
     lastMovementTime=millis();
-    if (inWarning||currentState==STATE_WARNING||currentState==STATE_SLEEPING) {
+    // Any genuine motion drops the warning stage and recovers
+    if (currentWarnStage > WARN_S0) {
       handleRecovery(); return;
     }
   }
 
-  IMUState newState;
-  unsigned long noMov=millis()-lastMovementTime;
-  if (noMov>=WARNING_TRIGGER_MS) {
-    if (!inWarning) { inWarning=true; warningStartTime=millis(); }
-    newState=(millis()-warningStartTime>=SLEEPING_TRIGGER_MS)?STATE_SLEEPING:STATE_WARNING;
-  } else { inWarning=false; newState=detectRawState(); }
+  // ── v10.1: Four-stage warning ladder ─────────────────────────────────────
+  // Escalation only advances when student is STATIK (not moving) and session
+  // is active. Snooze suppresses escalation entirely while active.
+  // Stage timings compile-time selected by DEMO_MODE flag (master switch later).
+  if (sessionActive && !sessionPaused) {
 
-  if (newState!=currentState) {
-    Serial.printf("[STATE] %s -> %s\n",stateNames[currentState],stateNames[newState]);
-    lastState=currentState; currentState=newState;
-    if (newState==STATE_WARNING) {
-      warningCount++; distractionCount++; streakStartTime=millis();
-      buzz_warning(); addTimelineEntry(TIMELINE_WARNING);
-      addDistractionEntry(0,-3); recalcFocusScore();
+    // Check snooze expiry
+    if (snoozeActive && (millis() - snoozeStartMs >= SNOOZE_MS)) {
+      snoozeActive   = false;
+      snoozeStartMs  = 0;
+      stageEnteredMs = millis();  // restart stage timer after snooze
+      Serial.println("[WARN] Snuz tamat, pantauan disambung semula");
+    }
 
-      // v9.1: Track warning timestamp for drift quiz window
-      if (warnBufCount < MAX_WARN_BUF) {
-        warnTimestamps[warnBufCount++] = millis();
-      } else {
-        // Shift buffer left, append new
-        for (int i=0;i<MAX_WARN_BUF-1;i++) warnTimestamps[i]=warnTimestamps[i+1];
-        warnTimestamps[MAX_WARN_BUF-1] = millis();
+    if (!snoozeActive && currentMotion == MOTION_STATIK) {
+      unsigned long timeInStage = millis() - stageEnteredMs;
+
+      switch (currentWarnStage) {
+        case WARN_S0:
+          // Begin timing disengagement from first still moment
+          if (stageEnteredMs == 0) stageEnteredMs = millis();
+          if (millis() - stageEnteredMs >= STAGE1_MS) {
+            currentWarnStage = WARN_S1;
+            stageEnteredMs   = millis();
+            inWarning        = true;  // shim
+            streakStartTime  = millis();
+            Serial.println("[WARN] Tahap 1 — Memerhati (senyap)");
+          }
+          break;
+
+        case WARN_S1:
+          if (timeInStage >= STAGE2_MS) {
+            currentWarnStage = WARN_S2;
+            stageEnteredMs   = millis();
+            buzz_nudge();
+            Serial.println("[WARN] Tahap 2 — Dorongan lembut");
+          }
+          break;
+
+        case WARN_S2:
+          if (timeInStage >= STAGE3_MS) {
+            currentWarnStage  = WARN_S3;
+            stageEnteredMs    = millis();
+            warningStartTime  = millis();  // shim for overlay countdown
+
+            // Score penalty — only at Stage 3
+            warningCount++; distractionCount++; streakStartTime = millis();
+            buzz_warning();
+            addTimelineEntry(TIMELINE_WARNING);
+            addDistractionEntry(0, -3);
+            recalcFocusScore();
+
+            // Update IMUState for overlay rendering compatibility
+            currentState = STATE_WARNING;
+
+            // v9.1: drift quiz warning buffer — only Stage 3 counts
+            if (warnBufCount < MAX_WARN_BUF) {
+              warnTimestamps[warnBufCount++] = millis();
+            } else {
+              for (int i=0;i<MAX_WARN_BUF-1;i++) warnTimestamps[i]=warnTimestamps[i+1];
+              warnTimestamps[MAX_WARN_BUF-1] = millis();
+            }
+
+            // Check drift quiz trigger
+            unsigned long windowMs  = quizWindowVals[settings.quizWindow];
+            unsigned long now       = millis();
+            int recentCount = 0;
+            for (int i=0;i<warnBufCount;i++) {
+              if (now - warnTimestamps[i] <= windowMs) recentCount++;
+            }
+            bool cooldownOk = (lastDriftQuizMs == 0 ||
+                               (now - lastDriftQuizMs) >= DRIFT_QUIZ_COOLDOWN_MS);
+            if (recentCount >= 2 && cooldownOk && companionReady && sessionActive) {
+              Serial.printf("[WARN] Drift kuiz dicetuskan (%d amaran)\n", recentCount);
+              StaticJsonDocument<128> driftDoc;
+              driftDoc["session_id"]    = serverSessionId;
+              driftDoc["severity"]      = "quiz_trigger";
+              driftDoc["ts"]            = (long)(millis() / 1000);
+              driftDoc["quiz_window_ms"]= (long)windowMs;
+              String driftBody; serializeJson(driftDoc, driftBody);
+              String resp = postToServerWithResponse("/api/session/drift", driftBody);
+              if (resp.length() > 0) handleDriftQuizResponse(resp);
+              lastDriftQuizMs = now;
+              warnBufCount    = 0;
+            } else if (companionReady && serverSessionId >= 0) {
+              StaticJsonDocument<128> driftDoc;
+              driftDoc["session_id"]    = serverSessionId;
+              driftDoc["severity"]      = "warning";
+              driftDoc["ts"]            = (long)(millis() / 1000);
+              driftDoc["quiz_window_ms"]= (long)windowMs;
+              String driftBody; serializeJson(driftDoc, driftBody);
+              postToServer("/api/session/drift", driftBody);
+            }
+            Serial.println("[WARN] Tahap 3 — Amaran penuh");
+          }
+          break;
+
+        case WARN_S3:
+          // Remain in Stage 3 — keep IMUState as WARNING or SLEEPING for overlay
+          // Escalate to SLEEPING after SLEEPING_TRIGGER_MS (existing behaviour)
+          if (currentState == STATE_WARNING &&
+              (millis() - warningStartTime >= SLEEPING_TRIGGER_MS)) {
+            currentState = STATE_SLEEPING;
+            sleepingCount++;  // kept for session summary display
+            lastSleepingBuzz = millis();
+            buzz_sleeping();
+            addTimelineEntry(TIMELINE_SLEEPING);
+            Serial.println("[WARN] Tahap 3 — Tidak Aktif (tidur)");
+          }
+          // Repeating sleeping buzz
+          if (currentState == STATE_SLEEPING &&
+              (millis() - lastSleepingBuzz >= SLEEPING_BUZZ_INTERVAL)) {
+            lastSleepingBuzz = millis();
+            buzz_sleeping();
+          }
+          break;
       }
 
-      // Count warnings within quiz window
-      unsigned long windowMs = quizWindowVals[settings.quizWindow];
-      unsigned long now = millis();
-      int recentCount = 0;
-      for (int i=0;i<warnBufCount;i++) {
-        if (now - warnTimestamps[i] <= windowMs) recentCount++;
-      }
-
-      // Trigger drift quiz if >=2 warnings in window and cooldown elapsed
-      bool cooldownOk = (lastDriftQuizMs == 0 ||
-                         (now - lastDriftQuizMs) >= DRIFT_QUIZ_COOLDOWN_MS);
-
-      if (recentCount >= 2 && cooldownOk && companionReady && sessionActive) {
-        Serial.printf("[v9.1] Drift kuiz dicetuskan (%d amaran dalam tetingkap)\n",
-                      recentCount);
-        // POST drift event, server decides whether to return a quiz question
-        StaticJsonDocument<128> driftDoc;
-        driftDoc["session_id"]    = serverSessionId;
-        driftDoc["severity"]      = "quiz_trigger";
-        driftDoc["ts"]            = (long)(millis() / 1000);
-        driftDoc["quiz_window_ms"]= (long)windowMs;
-        String driftBody; serializeJson(driftDoc, driftBody);
-        String resp = postToServerWithResponse("/api/session/drift", driftBody);
-        if (resp.length() > 0) {
-          handleDriftQuizResponse(resp);
-        }
-        lastDriftQuizMs = now;
-        warnBufCount    = 0;  // reset window after trigger
-      } else if (companionReady && serverSessionId >= 0) {
-        // POST regular drift event (no quiz trigger)
-        StaticJsonDocument<128> driftDoc;
-        driftDoc["session_id"]    = serverSessionId;
-        driftDoc["severity"]      = "warning";
-        driftDoc["ts"]            = (long)(millis() / 1000);
-        driftDoc["quiz_window_ms"]= (long)windowMs;
-        String driftBody; serializeJson(driftDoc, driftBody);
-        postToServer("/api/session/drift", driftBody);
-      }
-    } else if (newState==STATE_SLEEPING) {
-      sleepingCount++; distractionCount++; streakStartTime=millis();
-      lastSleepingBuzz=millis(); buzz_sleeping();
-      addTimelineEntry(TIMELINE_SLEEPING);
-      addDistractionEntry(1,-8); recalcFocusScore();
-    } else {
-      addTimelineEntry(newState==STATE_ACTIVE?TIMELINE_ACTIVE:TIMELINE_READING);
+    } else if (!snoozeActive && currentMotion == MOTION_AKTIF) {
+      // Moving — reset stage 0 timer so it only starts counting from stillness
+      if (currentWarnStage == WARN_S0) stageEnteredMs = 0;
     }
   }
 
+  // Streak bonus (unchanged)
   if (currentState==STATE_ACTIVE||currentState==STATE_READING) {
     if (millis()-streakStartTime>=DEEP_FOCUS_INTERVAL_MS) {
       streakBonusEarned++; streakStartTime=millis();
@@ -1169,6 +1312,12 @@ void startSession(int subjectIndex) {
   lastSessionValid=false;
   addTimelineEntry(TIMELINE_READING);
 
+  // v10.1: Reset four-stage warning state
+  currentWarnStage = WARN_S0;
+  stageEnteredMs   = 0;
+  snoozeActive     = false;
+  snoozeStartMs    = 0;
+
   // v9.1: Reset drift quiz window for this session
   warnBufCount      = 0;
   lastDriftQuizMs   = 0;
@@ -1361,7 +1510,8 @@ void renderSessionOverlay() {
 
 void renderHome() {
   if (sessionActive&&sessionPaused) { renderRestScreen(); return; }
-  if (sessionActive&&(currentState==STATE_WARNING||currentState==STATE_SLEEPING)) {
+  // v10.1: Only Stage 3 gets the full-screen overlay
+  if (sessionActive && currentWarnStage == WARN_S3) {
     renderSessionOverlay(); return;
   }
 
@@ -1415,9 +1565,25 @@ void renderHome() {
         M5.Display.setTextColor(WHITE,BLACK);
       } else { notificationActive=false; }
     }
-    M5.Display.setTextColor(DARKGREY,BLACK); M5.Display.setCursor(0,113);
-    M5.Display.print("WiFi: " WIFI_IP);
-    M5.Display.setTextColor(WHITE,BLACK);
+    // v10.1: Stage 1/2 soft indicators — no overlay, just an in-line hint
+    if (snoozeActive) {
+      M5.Display.setTextColor(DARKGREY,BLACK); M5.Display.setCursor(0,113);
+      unsigned long snoozeLeft = SNOOZE_MS - (millis() - snoozeStartMs);
+      M5.Display.printf("[Rehat sebentar... %lus]", snoozeLeft / 1000);
+      M5.Display.setTextColor(WHITE,BLACK);
+    } else if (currentWarnStage == WARN_S1) {
+      M5.Display.setTextColor(ORANGE,BLACK); M5.Display.setCursor(0,113);
+      M5.Display.print("● Memerhati...");
+      M5.Display.setTextColor(WHITE,BLACK);
+    } else if (currentWarnStage == WARN_S2) {
+      M5.Display.setTextColor(ORANGE,BLACK); M5.Display.setCursor(0,113);
+      M5.Display.print("! Fokus semula  [A] Snuz");
+      M5.Display.setTextColor(WHITE,BLACK);
+    } else {
+      M5.Display.setTextColor(DARKGREY,BLACK); M5.Display.setCursor(0,113);
+      M5.Display.print("WiFi: " WIFI_IP);
+      M5.Display.setTextColor(WHITE,BLACK);
+    }
     drawFooter("[A] -","[B] Tamat Sesi");
   } else {
     if (!calibrated) {
@@ -1605,9 +1771,23 @@ void renderCurrentScreen() {
 // BtnA = front large button, BtnB = side small button
 // wasPressed() behaviour is identical to v7
 void handleBtnA() {
-  if (sessionActive&&!sessionPaused&&
-      (currentState==STATE_SLEEPING||currentState==STATE_WARNING)) {
-    handleRecovery(); lastDisplayRefresh=0; return;
+  // v10.1: Stage-aware BtnA during active session (not paused, not in quiz)
+  if (sessionActive && !sessionPaused) {
+    if (currentWarnStage == WARN_S3) {
+      // Stage 3: full recovery (same as before)
+      handleRecovery(); lastDisplayRefresh=0; return;
+    } else if (currentWarnStage == WARN_S1 || currentWarnStage == WARN_S2) {
+      // Stage 1 or 2: snooze — student says "I'm thinking, hold off"
+      snoozeActive     = true;
+      snoozeStartMs    = millis();
+      currentWarnStage = WARN_S0;
+      stageEnteredMs   = 0;
+      inWarning        = false;
+      showNotification("Rehat sebentar...");
+      Serial.printf("[WARN] Snuz diaktif (%lus)\n", SNOOZE_MS / 1000);
+      lastDisplayRefresh=0; return;
+    }
+    // Stage 0: BtnA falls through to normal home menu handling below
   }
   switch(currentScreen) {
     case SCREEN_HOME:
@@ -2830,13 +3010,13 @@ void setup() {
   auto cfg = M5.config();
   M5.begin(cfg);
   Serial.begin(115200);
-  Serial.println("[BOOT] StudyAid v10.0 starting...");
+  Serial.println("[BOOT] StudyAid v10.1 starting...");
   Serial.println("[BOOT] Hardware: M5StickS3 + M5 Unit NFC (ST25R3916)");
 
   M5.Display.setRotation(3);
   clearDisplay();
   M5.Display.setTextSize(2); M5.Display.setCursor(30,30); M5.Display.println("StudyAid");
-  M5.Display.setTextSize(1); M5.Display.setCursor(70,58); M5.Display.println("v10.0");
+  M5.Display.setTextSize(1); M5.Display.setCursor(70,58); M5.Display.println("v10.1");
   delay(1000);
 
   // Speaker volume — set once at boot
