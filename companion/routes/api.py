@@ -28,7 +28,10 @@ _DT_FMT = "%Y-%m-%dT%H:%M:%S"
 _drift_log   = {}   # session_id -> list of datetime
 _quiz_cooldown = {}  # session_id -> datetime of last quiz trigger
 
-QUIZ_COOLDOWN_SECONDS = 600   # 10 minutes between drift quizzes per session
+QUIZ_COOLDOWN_SECONDS = 15   # v10.5: loose server backstop only — the device is
+                             # the primary cooldown authority (mode-aware: 30s demo /
+                             # 10min real). This short guard only prevents a
+                             # malfunctioning device from spamming quiz triggers.
 
 
 def _log(tag, payload):
@@ -47,10 +50,18 @@ def _parse_ts(val):
         return datetime.utcnow()
 
 
-def _pick_question(subject_id, exclude_ids=None):
+def _pick_question(subject_id, exclude_ids=None, difficulty=None,
+                   allow_cross_subject=False):
     """
-    Pick one random question for a drift quiz.
-    Tries subject_id first; falls back to any available bank if none found.
+    Pick one random question for a drift quiz, scoped to subject_id.
+
+    By default this is STRICT: only questions belonging to subject_id's banks are
+    eligible. If the subject has no questions, returns None (no quiz) rather than
+    serving an unrelated subject's question. Set allow_cross_subject=True only if
+    you explicitly want the any-bank fallback.
+
+    If difficulty is given (1=easy, 2=hard), prefer it, falling back to any
+    difficulty within the same subject.
     Returns a compact dict or None.
     """
     exclude_ids = exclude_ids or []
@@ -60,24 +71,35 @@ def _pick_question(subject_id, exclude_ids=None):
         for bank in banks:
             qs = QuizQuestion.query.filter_by(bank_id=bank.id).all()
             all_qs.extend(qs)
-        candidates = [q for q in all_qs if q.id not in exclude_ids]
-        if not candidates:
-            candidates = all_qs  # ignore exclusions if pool exhausted
-        if not candidates:
+        if not all_qs:
             return None
-        q = random.choice(candidates)
-        return _format_question(q)
 
-    # Try matching subject first
-    banks = QuizBank.query.filter_by(subject_id=subject_id).all()
-    if banks:
+        if difficulty is not None:
+            candidates = [q for q in all_qs
+                          if q.difficulty == difficulty and q.id not in exclude_ids]
+            if not candidates:
+                candidates = [q for q in all_qs if q.difficulty == difficulty]
+            if not candidates:
+                candidates = [q for q in all_qs if q.id not in exclude_ids]
+        else:
+            candidates = [q for q in all_qs if q.id not in exclude_ids]
+
+        if not candidates:
+            candidates = all_qs  # all answered already — allow repeats within subject
+        return _format_question(random.choice(candidates)) if candidates else None
+
+    # Strict: only this subject's banks
+    if subject_id is not None:
+        banks = QuizBank.query.filter_by(subject_id=subject_id).all()
         result = _from_banks(banks)
         if result:
             return result
 
-    # Fallback: any bank
-    all_banks = QuizBank.query.all()
-    return _from_banks(all_banks)
+    # Optional cross-subject fallback (off by default)
+    if allow_cross_subject:
+        return _from_banks(QuizBank.query.all())
+
+    return None
 
 
 def _format_question(q):
@@ -176,7 +198,13 @@ def session_drift():
         (now - last_quiz).total_seconds() >= QUIZ_COOLDOWN_SECONDS
     )
 
-    if recent_count >= 2 and cooldown_ok:
+    # v10.5: The DEVICE decides when to trigger (mode-aware: every-S3 in demo,
+    # 2-within-window in real). When severity == "quiz_trigger", the device has
+    # already made that decision — the server simply honours it, gated only by
+    # the loose backstop cooldown. "warning" severity is logged but never fires.
+    device_requested_quiz = (severity == "quiz_trigger")
+
+    if device_requested_quiz and cooldown_ok:
         # Determine subject from session
         subject_id = session.subject_id if session else None
 
@@ -186,12 +214,13 @@ def session_drift():
             QuizAnswer.query.filter_by(session_id=session_id).all()
         ]
 
+        # v10.4: random question (drift fires only when still; difficulty not applicable)
         question = _pick_question(subject_id, exclude_ids=answered_ids)
         if question:
             _quiz_cooldown[session_id] = now
             _drift_log[session_id] = []   # reset window after trigger
             _log("session/drift",
-                 f"Kuiz dicetuskan untuk sesi {session_id}: soalan {question['id']}")
+                 f"Kuiz dicetuskan sesi {session_id}: soalan {question['id']} (rawak)")
             return jsonify({"quiz": question})
 
     return jsonify({"quiz": None})
@@ -293,12 +322,11 @@ def quiz_questions():
         bank_query = bank_query.filter_by(topic=topic)
     banks = bank_query.all()
 
-    # If no topic-specific bank found, fall back to all banks for this subject
+    # If no topic-specific bank found, fall back to all banks FOR THIS SUBJECT only.
+    # v10.7: do NOT fall back to other subjects' banks — that leaked unrelated
+    # questions into a subject's quiz. Strict subject scoping.
     if not banks:
         banks = QuizBank.query.filter_by(subject_id=subject_id).all()
-    # If still nothing, fall back to any bank
-    if not banks:
-        banks = QuizBank.query.all()
 
     all_qs = []
     for bank in banks:

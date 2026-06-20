@@ -49,7 +49,7 @@ Rules:
 - Each question must have exactly 4 options (A, B, C, D).
 - Only one option is correct.
 - Questions must be factually accurate and appropriate for SPM level.
-- Vary difficulty: mix easy, medium, and harder questions.
+- Assign a difficulty: 1 = easy (direct recall of a single fact), 2 = hard (requires understanding, analysis, or less obvious knowledge). Generate an equal mix.
 - Return ONLY a valid JSON array. No preamble, no markdown, no explanation.
 
 Required JSON format:
@@ -58,7 +58,8 @@ Required JSON format:
     "question_text": "...",
     "options": ["option A", "option B", "option C", "option D"],
     "correct_index": 0,
-    "language": "{default_lang}"
+    "language": "{default_lang}",
+    "difficulty": 1
   }}
 ]"""
 
@@ -89,6 +90,9 @@ Required JSON format:
             raise RuntimeError(f"Soalan #{i+1} tidak mempunyai 4 pilihan.")
         if not (0 <= q["correct_index"] <= 3):
             raise RuntimeError(f"Soalan #{i+1} mempunyai correct_index tidak sah.")
+        # v10.3: coerce missing/invalid difficulty to 1
+        if q.get("difficulty") not in (1, 2):
+            q["difficulty"] = 1
 
     return questions
 
@@ -125,6 +129,7 @@ def _seed_demo_bank():
             "options": ["31 Ogos 1957", "16 September 1963", "31 Ogos 1960", "1 Januari 1958"],
             "correct_index": 0,
             "language": "bm",
+            "difficulty": 1,  # easy: direct date recall
         },
         {
             "question_text": "Siapakah Perdana Menteri pertama Malaysia?",
@@ -132,6 +137,7 @@ def _seed_demo_bank():
                         "Tunku Abdul Rahman", "Tun Dr. Mahathir Mohamad"],
             "correct_index": 2,
             "language": "bm",
+            "difficulty": 1,  # easy: well-known fact
         },
         {
             "question_text": "Apakah nama perjanjian yang membawa kepada kemerdekaan Tanah Melayu?",
@@ -139,12 +145,14 @@ def _seed_demo_bank():
                         "Perjanjian Persekutuan", "Perjanjian Bangkok"],
             "correct_index": 1,
             "language": "bm",
+            "difficulty": 2,  # hard: less obvious, requires specific knowledge
         },
         {
             "question_text": "Malaysia ditubuhkan pada tahun?",
             "options": ["1957", "1960", "1963", "1965"],
             "correct_index": 2,
             "language": "bm",
+            "difficulty": 1,  # easy: direct year recall
         },
         {
             "question_text": "Siapakah Yang di-Pertuan Agong pertama Malaysia?",
@@ -152,30 +160,35 @@ def _seed_demo_bank():
                         "Tuanku Abdul Rahman", "Sultan Ismail Nasiruddin"],
             "correct_index": 2,
             "language": "bm",
+            "difficulty": 2,  # hard: easily confused with other figures
         },
         {
             "question_text": "Apakah nama parti yang mengetuai kemerdekaan Tanah Melayu?",
             "options": ["DAP", "MIC", "MCA", "UMNO"],
             "correct_index": 3,
             "language": "bm",
+            "difficulty": 1,  # easy: prominent fact
         },
         {
             "question_text": "Berapakah bilangan negeri yang membentuk Malaysia pada 1963?",
             "options": ["11", "13", "14", "12"],
             "correct_index": 1,
             "language": "bm",
+            "difficulty": 2,  # hard: specific number, easily confused
         },
         {
             "question_text": "Negara manakah yang berpisah daripada Malaysia pada tahun 1965?",
             "options": ["Brunei", "Singapura", "Sarawak", "Sabah"],
             "correct_index": 1,
             "language": "bm",
+            "difficulty": 1,  # easy: well-known historical event
         },
         {
             "question_text": "Apakah slogan yang digunakan semasa perayaan kemerdekaan pertama?",
             "options": ["Malaysia Boleh", "Merdeka", "Bersatu Teguh", "Satu Malaysia"],
             "correct_index": 1,
             "language": "bm",
+            "difficulty": 1,  # easy: iconic word
         },
         {
             "question_text": "Di manakah pengisytiharan kemerdekaan Tanah Melayu dibacakan?",
@@ -183,6 +196,7 @@ def _seed_demo_bank():
                         "Padang Kelab Selangor", "Bangunan Sultan Abdul Samad"],
             "correct_index": 0,
             "language": "bm",
+            "difficulty": 2,  # hard: specific venue, easily confused
         },
     ]
 
@@ -193,6 +207,7 @@ def _seed_demo_bank():
             options_json=json.dumps(q["options"], ensure_ascii=False),
             correct_index=q["correct_index"],
             language=q["language"],
+            difficulty=q["difficulty"],  # v10.3
         ))
 
     db.session.commit()
@@ -267,6 +282,7 @@ def generate():
                     options_json=json.dumps(q["options"], ensure_ascii=False),
                     correct_index=q["correct_index"],
                     language=q.get("language", subject.default_lang),
+                    difficulty=q.get("difficulty", 1),  # v10.3
                 ))
             db.session.commit()
             flash(f"{len(raw_questions)} soalan berjaya dijana dan disimpan.", "ok")

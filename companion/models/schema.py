@@ -104,6 +104,8 @@ class QuizQuestion(db.Model):
     correct_index = db.Column(db.Integer, nullable=False)
     # language values: "bm" or "en"
     language = db.Column(db.String(2), nullable=False, default="bm")
+    # v10.3: difficulty for adaptive drift quiz — 1=easy, 2=hard
+    difficulty = db.Column(db.Integer, nullable=False, default=1)
 
 
 # ----------------------------------------------------------------------------

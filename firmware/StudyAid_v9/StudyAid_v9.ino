@@ -1,5 +1,5 @@
 /*
- * StudyAid Firmware v10.1
+ * StudyAid Firmware v10.8
  * Hardware: M5StickS3 + M5 Unit NFC (ST25R3916, I2C via Grove Port A)
  *
  * Button mapping:
@@ -54,6 +54,47 @@
  *           Sains, Pendidikan Moral
  *           Quiz Mode: topic picker screen added between subject and question
  *           New API call: GET /api/quiz/topics?subject_id=X
+ *   v10.8 - Fixes: "Salah" result screen now wraps the correct answer (was cut
+ *           off when long). Quiz question selection strictly scoped to subject —
+ *           removed cross-subject fallback in both _pick_question (drift) and
+ *           /api/quiz/questions (manual Mod Kuiz) that leaked other subjects' Qs.
+ *   v10.7 - UI polish pass: unified palette (COL_ACCENT/GOOD/WARN/DANGER/INFO/
+ *           TEXT/DIM). drawBatteryIcon() — graphical battery on every screen.
+ *           drawHeader/Footer rewritten: COL_ACCENT teal frame, WHITE text.
+ *           Consistent COL_INFO selection bands on all list screens. Left margin
+ *           4px throughout. Posture dot icon on session screen. Thin focus score
+ *           progress bar. Boot splash includes school name + tagline. ">" removed
+ *           from menu items (band is the cursor). All 0x1F5F / NAVY / DARKGREY
+ *           ad-hoc colors replaced with palette names.
+ *   v10.6 - Quiz question screen redesigned to prevent option text cutoff.
+ *           Question wraps (capped 3 lines); all four options listed compact, the
+ *           SELECTED option expands into a highlighted band showing full text
+ *           (wraps up to 2 lines). New printWrapped() word-wrap helper. resultShowTime
+ *           race fixed (stamp after POST, not before) in both drift + manual quiz.
+ *   v10.5 - Drift quiz fixes: non-blocking buzz_driftAlert() (was swallowing
+ *           button presses via M5.update() in speakerBeep loop). Mode-aware
+ *           trigger: every-S3 in demo, 2-within-window in real. Quiz timeout
+ *           (25s demo / 90s real) silently dismisses unanswered quiz and restores
+ *           S3/WARNING so Tidak Aktif escalation still fires for a sleeping student.
+ *           Non-blocking result screen (no delay() freeze). Server cooldown lowered
+ *           to 15s backstop; server now honours device quiz_trigger decision.
+ *   v10.4 - Drift quiz behaviour fixed: driftQuizActive flag pauses IMU monitoring
+ *           and warning ladder entirely while quiz is on screen. BtnA cycles
+ *           options; BtnB submits answer inline (no separate result screen).
+ *           Repeating buzz_driftAlert() every 1.5s until student responds.
+ *           Monitoring resumes from WARN_S0 after quiz. urlEncode() added to
+ *           fix Mod Kuiz 400 error (spaces in topic name). "Tidak Pasti" →
+ *           "Inaktif" in engagementNames. Drift quiz reverted to random question.
+ *   v10.3 - Part 3: Adaptive drift quiz. Device sends engagement_state in
+ *           /api/session/drift POST. Server picks difficulty=2 (hard) when
+ *           ENGAGED, difficulty=1 (easy) when UNCERTAIN, with random fallback.
+ *           StaticJsonDocument for drift POST increased to 192 bytes.
+ *           QuizQuestion schema adds difficulty column (DB reseed required).
+ *   v10.2 - UI overhaul: textSize(2) throughout, scrollable lists, new layout
+ *           constants (HDR_H/CONTENT_Y/FTR_Y/ROW_H). Demo/Real mode converted
+ *           from compile-time #define to NVS-persisted runtime toggle in Settings.
+ *           Active session screen redesigned: subject / time / Fokus (large) /
+ *           posture / stage indicator. All list screens scrollable at textSize(2).
  *   v10.1 - Four-stage warning ladder (Part 2):
  *           WarnStage enum: WARN_S0/S1/S2/S3
  *           Stage 0: engaged (no alert)
@@ -119,6 +160,26 @@
 #define COMP_SERVER_PORT 5000
 #define COMP_TIMEOUT_MS  3000   // HTTP request timeout — fail fast, don't block loop
 
+// ─── v10.2: Display layout constants ───────────────────────────────────────
+// All pixel positions derived from these so a single change reflows everything.
+// M5StickS3 display: 240×135px landscape.
+#define HDR_H       22    // header bar height (px)
+#define CONTENT_Y   24    // first content row y (just below header)
+#define FTR_Y       114   // footer bar top y
+#define FTR_H       21    // footer bar height (px)
+#define VISIBLE_ITEMS 5   // items shown per scroll viewport
+#define ROW_H       18    // px per row at textSize(2); 5 rows fit in content area
+
+// ─── v10.7: Unified UI palette ─────────────────────────────────────────────
+// Single source of truth for all colours. Replaces ad-hoc literals throughout.
+#define COL_ACCENT  0x1F5F  // navy-teal — universal header/footer/brand colour
+#define COL_GOOD    GREEN   // focus score, confirmed tags, correct answer
+#define COL_WARN    ORANGE  // Stage 2/3 warning, caution
+#define COL_DANGER  RED     // Stage 3 full alert, delete actions
+#define COL_INFO    CYAN    // selection bands, companion-mode indicator
+#define COL_TEXT    WHITE   // primary text
+#define COL_DIM     DARKGREY // secondary/hint text
+
 // ─── Subjects + Rest slot ──────────────────────────────────────────────────
 // v9.3: Updated subject list — Bahasa Inggeris, Sains, Pendidikan Moral removed;
 //       Fizik, Kimia, Biologi added. Order must match companion/models/schema.py:
@@ -135,7 +196,7 @@ const char* subjects[NUM_SUBJECTS] = {
 enum IMUState { STATE_ACTIVE, STATE_READING, STATE_WARNING, STATE_SLEEPING };
 const char*    stateNames[]     = { "Aktif", "Membaca", "Amaran!", "Tidak Aktif" };  // v10.0: Tertidur -> Tidak Aktif
 const char*    stateColorsHex[] = { "#4CAF50","#00BCD4","#FF9800","#F44336" };
-const uint16_t lcdStateColors[] = { GREEN, CYAN, ORANGE, RED };
+const uint16_t lcdStateColors[] = { COL_GOOD, COL_INFO, COL_WARN, COL_DANGER };
 
 // ─── v10.0: Posture & Engagement States ────────────────────────────────────
 // v10.0c: Two-axis posture model. Posture is described by two independent axes:
@@ -159,7 +220,7 @@ const char* motionNames[]      = { "Statik", "Aktif" };
 const char* orientationNames[] = { "Lintang", "Tegak" };
 
 enum EngagementState { ENGAGED, UNCERTAIN, DISENGAGED };
-const char* engagementNames[] = { "Fokus", "Tidak Pasti", "Tidak Fokus" };
+const char* engagementNames[] = { "Fokus", "Inaktif", "Tidak Fokus" };
 #define TIMELINE_ACTIVE   0
 #define TIMELINE_READING  1
 #define TIMELINE_WARNING  2
@@ -268,11 +329,9 @@ const float         imuSensitivityVals[]    = { 0.15f,   0.30f,   0.50f   };
 const unsigned long restDurationVals[]      = { 60000,   300000,  600000  };
 
 // ─── v10.1: Demo / Real timing presets ─────────────────────────────────────
-// Uncomment DEMO_MODE for competition demo — all four warning stages visible
-// within seconds. Comment out for real student use (minutes-scale timings).
-// The master Demo/Real switch (Settings toggle, NVS-persisted) replaces this
-// compile-time flag in the next change list.
-#define DEMO_MODE
+// Previously a compile-time #define DEMO_MODE flag — now a runtime NVS-persisted
+// toggle (demoMode bool, Settings index 11). All timing constants remain defined;
+// the active set is selected at runtime via demoMode ? DEMO_* : REAL_*.
 
 // Real preset — humane, minutes-scale escalation
 #define REAL_STAGE1_MS  120000UL   // 2 min still before Stage 1 (Watching)
@@ -286,17 +345,12 @@ const unsigned long restDurationVals[]      = { 60000,   300000,  600000  };
 #define DEMO_STAGE3_MS    5000UL   // 5s more before Stage 3
 #define DEMO_SNOOZE_MS   30000UL   // 30s snooze
 
-#ifdef DEMO_MODE
-  #define STAGE1_MS DEMO_STAGE1_MS
-  #define STAGE2_MS DEMO_STAGE2_MS
-  #define STAGE3_MS DEMO_STAGE3_MS
-  #define SNOOZE_MS DEMO_SNOOZE_MS
-#else
-  #define STAGE1_MS REAL_STAGE1_MS
-  #define STAGE2_MS REAL_STAGE2_MS
-  #define STAGE3_MS REAL_STAGE3_MS
-  #define SNOOZE_MS REAL_SNOOZE_MS
-#endif
+// v10.5: drift quiz INACTIVITY timeout — if no button press for this long, the
+// quiz auto-dismisses and monitoring resumes (so a sleeping student still gets the
+// Tidak Aktif alarm). Resets on every BtnA press, so an active student is never cut off.
+#define DEMO_QUIZ_TIMEOUT_MS  25000UL   // 25s in demo — comfortable read+answer time
+#define REAL_QUIZ_TIMEOUT_MS  90000UL   // 90s in real use
+
 // companionMode  : false = Solo (WiFi AP, same as v8.4)
 //                  true  = Companion (WiFi STA, uploads to Flask server)
 // companionReady : set true after successful WiFi STA connection at boot
@@ -304,6 +358,12 @@ const unsigned long restDurationVals[]      = { 60000,   300000,  600000  };
 // studentName    : displayed on Home menu so devices are easy to tell apart
 bool        companionMode  = false;
 bool        companionReady = false;
+bool        demoMode       = false;   // v10.2: runtime Demo/Real toggle (NVS: "demo_mode")
+// v10.4: drift quiz state — pauses monitoring while student answers
+bool        driftQuizActive  = false;
+unsigned long lastDriftAlertMs = 0;  // tracks repeating alert interval
+unsigned long driftQuizStartMs = 0;  // v10.5: when quiz opened (for timeout)
+bool        driftResultActive = false; // v10.5: showing drift quiz result (non-blocking)
 const char* deviceId       = "studyaid-01";   // change to "studyaid-02" for second device
 const char* studentName    = "M. Khalish";    // change to "Rania Batrisyia" for second device
 
@@ -579,6 +639,9 @@ void loadSettingsFromNVS() {
   // v9: load companion mode flag
   companionMode = prefs.getBool("comp_mode", false);
   Serial.printf("[v9] Mod: %s\n", companionMode ? "Rakan (Companion)" : "Solo");
+  // v10.2: load Demo/Real toggle
+  demoMode = prefs.getBool("demo_mode", false);
+  Serial.printf("[v10.2] Mod masa: %s\n", demoMode ? "DEMO" : "Nyata");
   // v10.0: load productive variance baseline from calibration Phase 2
   if (prefs.isKey("cal_var")) {
     calVarianceBaseline = prefs.getFloat("cal_var", 0.020f);
@@ -729,6 +792,30 @@ void buzz_restEnd()       { speakerBeep(600,200); delay(100); speakerBeep(800,20
 void buzz_restExpired()   { speakerBeep(1300,150); delay(60); speakerBeep(900,150); delay(60); speakerBeep(1300,150); delay(60); speakerBeep(900,250); }
 void buzz_error()         { speakerBeep(400,400); }
 void buzz_confirm()       { speakerBeep(1000,80); delay(40); speakerBeep(1000,80); }
+// v10.5: NON-BLOCKING drift alert — uses M5.Speaker.tone() directly with NO
+// M5.update() wait loop. The blocking speakerBeep() pumps M5.update() internally,
+// which consumes edge-triggered button events (wasPressed) before loop() sees them,
+// making buttons feel unresponsive. This fires the tone and returns immediately so
+// the main loop keeps reading buttons every cycle.
+void buzz_driftAlert()    { M5.Speaker.tone(1000, 150); }
+
+// v10.4: URL-encode a string — replaces spaces and reserved chars with %XX
+// Used by fetchQuizQuestions() to safely encode topic names in the query string.
+String urlEncode(const char* src) {
+  String out;
+  while (*src) {
+    char c = *src++;
+    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+        (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
+      out += c;  // unreserved — pass through
+    } else {
+      char buf[4];
+      snprintf(buf, sizeof(buf), "%%%02X", (unsigned char)c);
+      out += buf;
+    }
+  }
+  return out;
+}
 
 // ─── Focus Score ───────────────────────────────────────────────────────────
 void recalcFocusScore() {
@@ -960,7 +1047,7 @@ void updateIMUState() {
   if (sessionActive && !sessionPaused) {
 
     // Check snooze expiry
-    if (snoozeActive && (millis() - snoozeStartMs >= SNOOZE_MS)) {
+    if (snoozeActive && (millis() - snoozeStartMs >= (demoMode?DEMO_SNOOZE_MS:REAL_SNOOZE_MS))) {
       snoozeActive   = false;
       snoozeStartMs  = 0;
       stageEnteredMs = millis();  // restart stage timer after snooze
@@ -974,7 +1061,7 @@ void updateIMUState() {
         case WARN_S0:
           // Begin timing disengagement from first still moment
           if (stageEnteredMs == 0) stageEnteredMs = millis();
-          if (millis() - stageEnteredMs >= STAGE1_MS) {
+          if (millis() - stageEnteredMs >= (demoMode?DEMO_STAGE1_MS:REAL_STAGE1_MS)) {
             currentWarnStage = WARN_S1;
             stageEnteredMs   = millis();
             inWarning        = true;  // shim
@@ -984,7 +1071,7 @@ void updateIMUState() {
           break;
 
         case WARN_S1:
-          if (timeInStage >= STAGE2_MS) {
+          if (timeInStage >= (demoMode?DEMO_STAGE2_MS:REAL_STAGE2_MS)) {
             currentWarnStage = WARN_S2;
             stageEnteredMs   = millis();
             buzz_nudge();
@@ -993,7 +1080,7 @@ void updateIMUState() {
           break;
 
         case WARN_S2:
-          if (timeInStage >= STAGE3_MS) {
+          if (timeInStage >= (demoMode?DEMO_STAGE3_MS:REAL_STAGE3_MS)) {
             currentWarnStage  = WARN_S3;
             stageEnteredMs    = millis();
             warningStartTime  = millis();  // shim for overlay countdown
@@ -1024,14 +1111,19 @@ void updateIMUState() {
               if (now - warnTimestamps[i] <= windowMs) recentCount++;
             }
             bool cooldownOk = (lastDriftQuizMs == 0 ||
-                               (now - lastDriftQuizMs) >= DRIFT_QUIZ_COOLDOWN_MS);
-            if (recentCount >= 2 && cooldownOk && companionReady && sessionActive) {
+                               (now - lastDriftQuizMs) >= (demoMode?30000UL:DRIFT_QUIZ_COOLDOWN_MS));
+            // v10.5: mode-aware trigger rule.
+            //   Demo  → fire on EVERY Stage 3 (cooldown-gated) for predictable demos
+            //   Real  → require 2 Stage-3 events within the window (humane)
+            bool triggerRuleMet = demoMode ? (recentCount >= 1) : (recentCount >= 2);
+            if (triggerRuleMet && cooldownOk && companionReady && sessionActive) {
               Serial.printf("[WARN] Drift kuiz dicetuskan (%d amaran)\n", recentCount);
+              // v10.4: engagement_state removed — drift always fires when still
               StaticJsonDocument<128> driftDoc;
-              driftDoc["session_id"]    = serverSessionId;
-              driftDoc["severity"]      = "quiz_trigger";
-              driftDoc["ts"]            = (long)(millis() / 1000);
-              driftDoc["quiz_window_ms"]= (long)windowMs;
+              driftDoc["session_id"]     = serverSessionId;
+              driftDoc["severity"]       = "quiz_trigger";
+              driftDoc["ts"]             = (long)(millis() / 1000);
+              driftDoc["quiz_window_ms"] = (long)windowMs;
               String driftBody; serializeJson(driftDoc, driftBody);
               String resp = postToServerWithResponse("/api/session/drift", driftBody);
               if (resp.length() > 0) handleDriftQuizResponse(resp);
@@ -1039,10 +1131,10 @@ void updateIMUState() {
               warnBufCount    = 0;
             } else if (companionReady && serverSessionId >= 0) {
               StaticJsonDocument<128> driftDoc;
-              driftDoc["session_id"]    = serverSessionId;
-              driftDoc["severity"]      = "warning";
-              driftDoc["ts"]            = (long)(millis() / 1000);
-              driftDoc["quiz_window_ms"]= (long)windowMs;
+              driftDoc["session_id"]     = serverSessionId;
+              driftDoc["severity"]       = "warning";
+              driftDoc["ts"]             = (long)(millis() / 1000);
+              driftDoc["quiz_window_ms"] = (long)windowMs;
               String driftBody; serializeJson(driftDoc, driftBody);
               postToServer("/api/session/drift", driftBody);
             }
@@ -1403,14 +1495,20 @@ void endSession() {
   }
 
   M5.Display.fillScreen(BLACK);
-  M5.Display.setCursor(0,10); M5.Display.println("Sesi Tamat");
-  M5.Display.setCursor(0,28);
-  M5.Display.printf("%s\n%s\n",subjects[currentSubject],formatTime(elapsed).c_str());
-  M5.Display.setTextSize(3); M5.Display.setTextColor(GREEN,BLACK);
-  M5.Display.printf(" %d\n",focusScore);
-  M5.Display.setTextSize(1); M5.Display.setTextColor(WHITE,BLACK);
-  M5.Display.printf("A:-%d T:-%d P:+%d\n",warningCount*3,sleepingCount*8,recoveryBonus);
-  M5.Display.printf("Fokus:+%d Tempoh:+%d\n",streakBonus,durationBonus);
+  M5.Display.fillRect(0,0,240,HDR_H,COL_ACCENT);
+  M5.Display.setTextColor(COL_TEXT,COL_ACCENT); M5.Display.setTextSize(1);
+  M5.Display.setCursor(4,7); M5.Display.print("Sesi Tamat");
+  drawBatteryIcon(218,7);
+  M5.Display.setTextColor(COL_DIM,BLACK); M5.Display.setTextSize(2);
+  M5.Display.setCursor(4,26); M5.Display.printf("%s\n",subjects[currentSubject]);
+  M5.Display.setTextColor(COL_TEXT,BLACK); M5.Display.setTextSize(2);
+  M5.Display.setCursor(4,44); M5.Display.printf("%s\n",formatTime(elapsed).c_str());
+  M5.Display.setTextColor(COL_GOOD,BLACK);
+  M5.Display.setTextSize(3); M5.Display.setCursor(4,62);
+  M5.Display.printf("Fokus: %d",focusScore);
+  M5.Display.setTextColor(COL_DIM,BLACK); M5.Display.setTextSize(1);
+  M5.Display.setCursor(4,90);
+  M5.Display.printf("A:-%d T:-%d P:+%d B:+%d\n",warningCount*3,sleepingCount*8,recoveryBonus,durationBonus);
   M5.Display.printf("Rehat: %dx %s\n",restBreakCount,formatTime(totalRestMs).c_str());
   delay(4000);
 
@@ -1421,21 +1519,55 @@ void endSession() {
 
 // ─── Display Helpers ───────────────────────────────────────────────────────
 // All M5.Lcd.* calls replaced with M5.Display.* (M5Unified API)
-void clearDisplay() { M5.Display.fillScreen(BLACK); M5.Display.setTextColor(WHITE,BLACK); }
+void clearDisplay() { M5.Display.fillScreen(BLACK); M5.Display.setTextColor(COL_TEXT,BLACK); }
 
-void drawHeader(const char* t,uint16_t c=DARKGREY) {
-  M5.Display.fillRect(0,0,240,20,c);
-  M5.Display.setTextColor(BLACK,c); M5.Display.setTextSize(1);
-  M5.Display.setCursor(4,6); M5.Display.print(t);
-  M5.Display.setTextColor(WHITE,BLACK);
+// v10.7: Battery icon — 18×8px at (x,y). Green >50%, amber >20%, red ≤20%.
+void drawBatteryIcon(int x, int y) {
+  int lvl = getBatteryLevel();
+  uint16_t fc = (lvl>50) ? COL_GOOD : (lvl>20 ? COL_WARN : COL_DANGER);
+  M5.Display.drawRect(x, y, 16, 8, COL_DIM);        // body outline
+  M5.Display.fillRect(x+16, y+2, 2, 4, COL_DIM);    // terminal nub
+  int fw = map(constrain(lvl,0,100), 0, 100, 0, 14);
+  if (fw>0) M5.Display.fillRect(x+1, y+1, fw, 6, fc); // charge fill
 }
 
-void drawFooter(const char* l,const char* r) {
-  M5.Display.fillRect(0,118,240,16,DARKGREY);
-  M5.Display.setTextColor(WHITE,DARKGREY); M5.Display.setTextSize(1);
-  M5.Display.setCursor(2,121); M5.Display.print(l);
-  M5.Display.setCursor(240-strlen(r)*6-2,121); M5.Display.print(r);
-  M5.Display.setTextColor(WHITE,BLACK);
+// drawHeader — universal: COL_ACCENT bar, WHITE title, battery icon always on right
+void drawHeader(const char* t, uint16_t c=COL_ACCENT) {
+  M5.Display.fillRect(0,0,240,HDR_H,c);
+  M5.Display.setTextColor(COL_TEXT,c); M5.Display.setTextSize(1);
+  M5.Display.setCursor(4,7); M5.Display.print(t);
+  drawBatteryIcon(218,7);
+  M5.Display.setTextColor(COL_TEXT,BLACK);
+}
+
+// drawFooter — COL_ACCENT bar to match header, creating a clean frame
+void drawFooter(const char* l, const char* r) {
+  M5.Display.fillRect(0,FTR_Y,240,FTR_H,COL_ACCENT);
+  M5.Display.setTextColor(COL_TEXT,COL_ACCENT); M5.Display.setTextSize(1);
+  M5.Display.setCursor(4,FTR_Y+7); M5.Display.print(l);
+  M5.Display.setCursor(240-strlen(r)*6-4,FTR_Y+7); M5.Display.print(r);
+  M5.Display.setTextColor(COL_TEXT,BLACK);
+}
+
+// v10.2: Scroll helpers — used by all list screens ─────────────────────────
+// Returns the first visible item for a given selected index and total count.
+// Keeps the cursor roughly centred in the VISIBLE_ITEMS viewport.
+int scrollStart(int selected, int total) {
+  int s = selected - VISIBLE_ITEMS/2;
+  if (s < 0) s = 0;
+  if (s + VISIBLE_ITEMS > total) s = max(0, total - VISIBLE_ITEMS);
+  return s;
+}
+// Draws a proportional 4px scrollbar on the right edge of the content area.
+void drawScrollBar(int selected, int total) {
+  if (total <= VISIBLE_ITEMS) return;
+  int trackH = FTR_Y - CONTENT_Y;                         // 90px
+  int barH   = max(8, trackH * VISIBLE_ITEMS / total);
+  int scrollOff = scrollStart(selected, total);
+  int barY   = CONTENT_Y + trackH * scrollOff / total;
+  barY = min(barY, FTR_Y - barH);
+  M5.Display.fillRect(236, CONTENT_Y, 4, trackH, 0x2104);  // dark track
+  M5.Display.fillRect(236, barY,      4, barH,   COL_DIM);  // thumb
 }
 
 void drawProgressBar(int x,int y,int w,int h,float pct,uint16_t color) {
@@ -1448,234 +1580,251 @@ void drawProgressBar(int x,int y,int w,int h,float pct,uint16_t color) {
 // ─── Screen Renderers ──────────────────────────────────────────────────────
 void renderRestScreen() {
   clearDisplay();
-  M5.Display.fillRect(0,0,240,20,NAVY);
-  M5.Display.setTextColor(WHITE,NAVY); M5.Display.setTextSize(1);
-  M5.Display.setCursor(4,6);
-  M5.Display.printf("Berehat | %s",subjects[currentSubject]);
-  M5.Display.setTextColor(WHITE,BLACK);
-  M5.Display.setCursor(0,28); M5.Display.setTextSize(1);
+  char hdr[28]; snprintf(hdr,28,"Berehat | %s",subjects[currentSubject]);
+  drawHeader(hdr);
 
   unsigned long elapsed=millis()-restTimerStart;
   unsigned long remaining=(elapsed>=REST_DURATION_MS)?0:REST_DURATION_MS-elapsed;
   float pct=min((float)elapsed/REST_DURATION_MS,1.0f);
 
   if (!restTimerExpired) {
-    M5.Display.println("Masa rehat berbaki:");
-    M5.Display.setTextSize(2);
-    M5.Display.printf(" %s\n",formatTime(remaining).c_str());
-    M5.Display.setTextSize(1);
-    drawProgressBar(0,70,240,10,pct,NAVY);
-    M5.Display.setCursor(0,88);
+    M5.Display.setTextColor(COL_DIM,BLACK); M5.Display.setTextSize(2);
+    M5.Display.setCursor(4,CONTENT_Y); M5.Display.println("Masa rehat:");
+    M5.Display.setTextColor(COL_TEXT,BLACK);
+    M5.Display.setTextSize(3); M5.Display.setCursor(20,44);
+    M5.Display.printf("%s\n",formatTime(remaining).c_str());
+    drawProgressBar(4,70,228,6,pct,COL_ACCENT);
+    M5.Display.setTextColor(COL_DIM,BLACK); M5.Display.setTextSize(2);
+    M5.Display.setCursor(4,82);
     M5.Display.printf("Rehat ke-%d\n",restBreakCount);
-    M5.Display.printf("Jumlah: %s\n",formatTime(totalRestMs+(millis()-pauseStartTime)).c_str());
-    M5.Display.setTextColor(DARKGREY,BLACK); M5.Display.setCursor(0,108);
-    M5.Display.println("Sentuh tag REHAT untuk sambung");
+    M5.Display.setTextColor(COL_DIM,BLACK); M5.Display.setTextSize(1);
+    M5.Display.setCursor(4,FTR_Y-10);
+    M5.Display.print("Sentuh tag REHAT untuk sambung");
   } else {
-    uint16_t fc=flashState?ORANGE:DARKGREY;
-    M5.Display.fillRect(0,28,240,30,fc);
+    uint16_t fc=flashState?COL_WARN:COL_DIM;
+    M5.Display.fillRect(0,CONTENT_Y,240,32,fc);
     M5.Display.setTextColor(BLACK,fc); M5.Display.setTextSize(2);
-    M5.Display.setCursor(4,36); M5.Display.println("Rehat Tamat!");
-    M5.Display.setTextColor(WHITE,BLACK); M5.Display.setTextSize(1);
-    M5.Display.setCursor(0,68);
-    M5.Display.println("Sentuh tag REHAT\nuntuk sambung semula.");
-    M5.Display.printf("\nRehat ke-%d selesai\n",restBreakCount);
+    M5.Display.setCursor(4,CONTENT_Y+8); M5.Display.println("Rehat Tamat!");
+    M5.Display.setTextColor(COL_TEXT,BLACK); M5.Display.setTextSize(2);
+    M5.Display.setCursor(4,62);
+    M5.Display.println("Sentuh tag REHAT");
+    M5.Display.setTextColor(COL_DIM,BLACK); M5.Display.setTextSize(1);
+    M5.Display.setCursor(4,82);
+    M5.Display.printf("Rehat ke-%d selesai\n",restBreakCount);
   }
-  M5.Display.setTextColor(WHITE,BLACK);
+  M5.Display.setTextColor(COL_TEXT,BLACK);
 }
 
 void renderSessionOverlay() {
   if (currentState==STATE_WARNING) {
-    M5.Display.fillScreen(ORANGE);
-    M5.Display.setTextColor(BLACK,ORANGE);
+    M5.Display.fillScreen(COL_WARN);
+    M5.Display.setTextColor(BLACK,COL_WARN);
     M5.Display.setTextSize(2); M5.Display.setCursor(10,10); M5.Display.println("! AMARAN !");
-    M5.Display.setTextSize(1); M5.Display.setCursor(0,50);
+    M5.Display.setTextSize(2); M5.Display.setCursor(4,44);
     int rem=max(0,(int)((SLEEPING_TRIGGER_MS-(millis()-warningStartTime))/1000));
-    M5.Display.printf("Gerak sekarang!\nTertidur dalam: %ds\nMarkah: -3",rem);
-    M5.Display.setCursor(0,118); M5.Display.print("[A] Saya dah bangun!");
+    M5.Display.printf("Gerak sekarang!\nTamat dalam: %ds",rem);
+    M5.Display.setTextSize(1); M5.Display.setCursor(4,108); M5.Display.print("[A] Saya dah bangun!");
     return;
   }
   if (currentState==STATE_SLEEPING) {
-    uint16_t fc=flashState?RED:MAROON;
-    M5.Display.fillScreen(BLACK); M5.Display.fillRect(0,0,240,30,fc);
-    M5.Display.setTextColor(WHITE,fc);
+    uint16_t fc=flashState?COL_DANGER:MAROON;
+    M5.Display.fillScreen(BLACK); M5.Display.fillRect(0,0,240,32,fc);
+    M5.Display.setTextColor(COL_TEXT,fc);
     M5.Display.setTextSize(2); M5.Display.setCursor(10,8); M5.Display.println("!! TIDAK AKTIF !!");
-    M5.Display.setTextColor(WHITE,BLACK);
-    M5.Display.setTextSize(1); M5.Display.setCursor(0,40);
-    M5.Display.printf("Bangun!\nGerak atau tekan [A].\nMarkah: -%d",sleepingCount*8);
-    M5.Display.setTextColor(DARKGREY,BLACK); M5.Display.setCursor(0,118);
-    M5.Display.print("[A] Bangun!");
-    M5.Display.setTextColor(WHITE,BLACK);
+    M5.Display.setTextColor(COL_TEXT,BLACK);
+    M5.Display.setTextSize(2); M5.Display.setCursor(4,40);
+    M5.Display.printf("Bangun!\nGerak atau tekan [A].");
+    M5.Display.setTextColor(COL_DIM,BLACK); M5.Display.setTextSize(1);
+    M5.Display.setCursor(4,108); M5.Display.print("[A] Bangun!");
+    M5.Display.setTextColor(COL_TEXT,BLACK);
   }
 }
 
 void renderHome() {
   if (sessionActive&&sessionPaused) { renderRestScreen(); return; }
-  // v10.1: Only Stage 3 gets the full-screen overlay
   if (sessionActive && currentWarnStage == WARN_S3) {
     renderSessionOverlay(); return;
   }
-
   clearDisplay();
-  uint16_t hc=sessionActive?lcdStateColors[currentState]:DARKGREY;
 
-  M5.Display.fillRect(0,0,240,20,hc);
-  M5.Display.setTextColor(BLACK,hc); M5.Display.setTextSize(1);
-  M5.Display.setCursor(4,6);
-  if (sessionActive)
-    M5.Display.printf("StudyAid v10 | %s",stateNames[currentState]);
-  else
-    M5.Display.print("StudyAid v10");
-  int bat=getBatteryLevel();
-  M5.Display.setCursor(200,6);
-  M5.Display.printf("%d%%",bat);
-  M5.Display.setTextColor(WHITE,BLACK);
-
-  M5.Display.setCursor(0,24); M5.Display.setTextSize(1);
+  // ─── Header ───────────────────────────────────────────────────────────────
+  uint16_t hc = sessionActive ? lcdStateColors[currentState] : COL_ACCENT;
+  M5.Display.fillRect(0,0,240,HDR_H,hc);
+  M5.Display.setTextColor(COL_TEXT,hc); M5.Display.setTextSize(1);
+  M5.Display.setCursor(4,7);
+  if (sessionActive) {
+    M5.Display.printf("StudyAid | %s",stateNames[currentState]);
+    if (demoMode) {
+      M5.Display.setTextColor(COL_WARN,hc); M5.Display.setCursor(130,7);
+      M5.Display.print("[DEMO]");
+      M5.Display.setTextColor(COL_TEXT,hc);
+    }
+  } else {
+    M5.Display.print(studentName);
+  }
+  drawBatteryIcon(218,7);
+  M5.Display.setTextColor(COL_TEXT,BLACK);
 
   if (sessionActive) {
+    // ─── Active session: 5-row layout ────────────────────────────────────
     unsigned long elapsed=getActiveSessionMs();
-    unsigned long streakMs=millis()-streakStartTime;
-    float streakPct=min((float)streakMs/DEEP_FOCUS_INTERVAL_MS,1.0f);
-    M5.Display.printf("%s\n",subjects[currentSubject]);
-    M5.Display.printf("Masa: %s\n",formatTime(elapsed).c_str());
-    M5.Display.printf("Markah: %d  |  Gang: %d\n",focusScore,distractionCount);
-    // v10.0c: Live posture display — two axes (motion + orientation) prominent,
-    // engagement (inference) shown soft/secondary. e.g. "Postur: Aktif Lintang"
-    M5.Display.setTextColor(WHITE,BLACK);
-    M5.Display.printf("Postur: %s %s",
-      motionNames[currentMotion], orientationNames[currentOrientation]);
-    M5.Display.setTextColor(DARKGREY,BLACK);
-    M5.Display.printf(" [%s]\n",engagementNames[currentEngagement]);
-    M5.Display.setTextColor(DARKGREY,BLACK);
-    M5.Display.printf("A:-%d T:-%d P:+%d D:+%d\n",
-      warningCount*3,sleepingCount*8,recoveryBonus,durationBonus);
-    M5.Display.setTextColor(WHITE,BLACK);
-    M5.Display.print("Fokus:");
-    drawProgressBar(46,82,120,8,streakPct,GREEN);
-    M5.Display.setCursor(170,82); M5.Display.printf("x%d",streakBonusEarned);
-    if (restBreakCount>0) {
-      M5.Display.setTextColor(CYAN,BLACK); M5.Display.setCursor(0,93);
-      M5.Display.printf("Rehat: %dx %s",restBreakCount,formatTime(totalRestMs).c_str());
-      M5.Display.setTextColor(WHITE,BLACK);
-    }
-    if (notificationActive) {
-      if (millis()-notificationStart<NOTIFICATION_DURATION_MS) {
-        M5.Display.setTextColor(YELLOW,BLACK); M5.Display.setCursor(0,103);
-        M5.Display.printf(">> %s",notificationMsg);
-        M5.Display.setTextColor(WHITE,BLACK);
-      } else { notificationActive=false; }
-    }
-    // v10.1: Stage 1/2 soft indicators — no overlay, just an in-line hint
+
+    // Row 1 (y=26): Subject name — dimmed (secondary info)
+    M5.Display.setTextColor(COL_DIM,BLACK); M5.Display.setTextSize(2);
+    M5.Display.setCursor(4,26); M5.Display.print(subjects[currentSubject]);
+
+    // Row 2 (y=44): Elapsed time
+    M5.Display.setTextColor(COL_TEXT,BLACK); M5.Display.setTextSize(2);
+    M5.Display.setCursor(4,44); M5.Display.print(formatTime(elapsed).c_str());
+
+    // Row 3 (y=62): Focus score — hero number in COL_GOOD
+    M5.Display.setTextColor(COL_GOOD,BLACK);
+    M5.Display.setTextSize(3); M5.Display.setCursor(4,62);
+    M5.Display.printf("Fokus: %d",focusScore);
+    // Thin progress bar under score (proportional to score value)
+    drawProgressBar(4,86,140,3,focusScore/100.0f,COL_GOOD);
+
+    // Row 4 (y=91): Posture — small motion icon + text
+    // Motion icon: filled circle=AKTIF (green dot), filled dash=STATIK (dim dash)
+    if (currentMotion==MOTION_AKTIF)
+      M5.Display.fillCircle(8,98,4,COL_GOOD);
+    else
+      M5.Display.fillRect(4,97,8,3,COL_DIM);
+    M5.Display.setTextColor(COL_TEXT,BLACK); M5.Display.setTextSize(2);
+    M5.Display.setCursor(18,91);
+    M5.Display.printf("%s %s",motionNames[currentMotion],orientationNames[currentOrientation]);
+    M5.Display.setTextColor(COL_DIM,BLACK); M5.Display.setTextSize(1);
+    M5.Display.printf(" [%s]",engagementNames[currentEngagement]);
+    M5.Display.setTextColor(COL_TEXT,BLACK);
+
+    // Row 5 (y=106): Stage indicator with small drawn glyph
+    M5.Display.setTextSize(1);
     if (snoozeActive) {
-      M5.Display.setTextColor(DARKGREY,BLACK); M5.Display.setCursor(0,113);
-      unsigned long snoozeLeft = SNOOZE_MS - (millis() - snoozeStartMs);
-      M5.Display.printf("[Rehat sebentar... %lus]", snoozeLeft / 1000);
-      M5.Display.setTextColor(WHITE,BLACK);
-    } else if (currentWarnStage == WARN_S1) {
-      M5.Display.setTextColor(ORANGE,BLACK); M5.Display.setCursor(0,113);
-      M5.Display.print("● Memerhati...");
-      M5.Display.setTextColor(WHITE,BLACK);
-    } else if (currentWarnStage == WARN_S2) {
-      M5.Display.setTextColor(ORANGE,BLACK); M5.Display.setCursor(0,113);
-      M5.Display.print("! Fokus semula  [A] Snuz");
-      M5.Display.setTextColor(WHITE,BLACK);
+      unsigned long snoozeLeft=(demoMode?DEMO_SNOOZE_MS:REAL_SNOOZE_MS)-(millis()-snoozeStartMs);
+      M5.Display.setTextColor(COL_DIM,BLACK); M5.Display.setCursor(4,106);
+      M5.Display.printf("[Rehat sebentar... %lus]",snoozeLeft/1000);
+    } else if (currentWarnStage==WARN_S1) {
+      M5.Display.fillCircle(6,109,4,COL_WARN);         // watching dot
+      M5.Display.setTextColor(COL_WARN,BLACK); M5.Display.setCursor(14,106);
+      M5.Display.print("Memerhati...");
+    } else if (currentWarnStage==WARN_S2) {
+      M5.Display.fillTriangle(4,112,8,106,12,112,COL_WARN); // warning triangle
+      M5.Display.setTextColor(COL_WARN,BLACK); M5.Display.setCursor(16,106);
+      M5.Display.print("Fokus semula  [A] Snuz");
     } else {
-      M5.Display.setTextColor(DARKGREY,BLACK); M5.Display.setCursor(0,113);
-      M5.Display.print("WiFi: " WIFI_IP);
-      M5.Display.setTextColor(WHITE,BLACK);
+      M5.Display.setTextColor(COL_DIM,BLACK); M5.Display.setCursor(4,106);
+      if (companionReady&&serverSessionId>=0)
+        M5.Display.printf("Sesi #%d",serverSessionId);
+      else
+        M5.Display.print("WiFi: " WIFI_IP);
     }
+    M5.Display.setTextColor(COL_TEXT,BLACK);
     drawFooter("[A] -","[B] Tamat Sesi");
+
   } else {
-    if (!calibrated) {
-      M5.Display.setTextColor(ORANGE,BLACK); M5.Display.println("! Belum dikalibrasi");
-      M5.Display.setTextColor(WHITE,BLACK);
-    }
-    // v9.3: Show student name so devices are easy to identify
-    M5.Display.setTextColor(CYAN,BLACK);
-    M5.Display.printf("%s\n", studentName);
-    M5.Display.setTextColor(WHITE,BLACK);
-    M5.Display.println("Tiada sesi aktif\n");
-    M5.Display.setTextColor(DARKGREY,BLACK);
-    M5.Display.println("WiFi: " WIFI_IP "\n");
-    M5.Display.setTextColor(WHITE,BLACK);
+    // ─── Idle home: 5 menu items with unified COL_INFO selection band ────
     const char* opts[]={"Mula Sesi","Daftar Tag","Kalibrasi","Tetapan","Mod Kuiz"};
     for (int i=0;i<5;i++) {
-      M5.Display.setTextColor(i==homeMenuIdx?BLACK:DARKGREY,
-                              i==homeMenuIdx?WHITE:BLACK);
-      M5.Display.printf(" > %s\n",opts[i]);
+      int rowY = CONTENT_Y + i*ROW_H;
+      bool sel = (i==homeMenuIdx);
+      if (sel) M5.Display.fillRect(0,rowY-1,232,ROW_H,COL_INFO);
+      M5.Display.setTextColor(sel?BLACK:COL_TEXT, sel?COL_INFO:BLACK);
+      M5.Display.setCursor(4,rowY+1); M5.Display.setTextSize(2);
+      M5.Display.print(opts[i]);
     }
-    M5.Display.setTextColor(WHITE,BLACK);
+    M5.Display.setTextColor(COL_TEXT,BLACK);
     drawFooter("[A] Kitar","[B] Pilih");
   }
 }
 
+
 void renderStartSession() {
-  clearDisplay(); drawHeader("Mula Sesi",NAVY);
-  M5.Display.setTextSize(1); M5.Display.setCursor(0,26);
-  M5.Display.println("Pilih subjek:\n");
-  int total=NUM_SUBJECTS+1;
-  for (int i=0;i<total;i++) {
-    bool sel=(i==subjectSelectIdx);
-    M5.Display.setTextColor(sel?BLACK:WHITE,sel?WHITE:BLACK);
-    if (i<NUM_SUBJECTS)
-      M5.Display.printf(" %s\n",subjects[i]);
-    else {
-      M5.Display.setTextColor(sel?BLACK:DARKGREY,sel?DARKGREY:BLACK);
-      M5.Display.println(" < Kembali");
+  int total = NUM_SUBJECTS+1;
+  int vis0  = scrollStart(subjectSelectIdx, total);
+  clearDisplay(); drawHeader("Mula Sesi");
+  drawScrollBar(subjectSelectIdx, total);
+  for (int i=vis0; i<vis0+VISIBLE_ITEMS && i<total; i++) {
+    int rowY = CONTENT_Y + (i-vis0)*ROW_H;
+    bool sel = (i==subjectSelectIdx);
+    if (sel) M5.Display.fillRect(0,rowY-1,232,ROW_H,COL_INFO);
+    M5.Display.setCursor(4,rowY); M5.Display.setTextSize(2);
+    if (i<NUM_SUBJECTS) {
+      M5.Display.setTextColor(sel?BLACK:COL_TEXT, sel?COL_INFO:BLACK);
+      M5.Display.print(subjects[i]);
+    } else {
+      M5.Display.setTextColor(sel?BLACK:COL_DIM, sel?COL_INFO:BLACK);
+      M5.Display.print("< Kembali");
     }
   }
-  M5.Display.setTextColor(WHITE,BLACK);
+  M5.Display.setTextColor(COL_TEXT,BLACK);
   drawFooter("[A] Kitar","[B] Pilih");
 }
 
 void renderRegisterTag() {
-  clearDisplay(); drawHeader("Daftar Tag",NAVY);
-  M5.Display.setTextSize(1); M5.Display.setCursor(0,26);
-  M5.Display.printf("Tag: %d/%d\n\n",tagCount,MAX_TAGS);
-  int total=NUM_SUBJECTS+2;
-  for (int i=0;i<total;i++) {
-    bool sel=(i==registerSelectIdx);
+  int total = NUM_SUBJECTS+2;
+  int vis0  = scrollStart(registerSelectIdx, total);
+  char hdrBuf[24]; snprintf(hdrBuf,24,"Daftar Tag  %d/%d",tagCount,MAX_TAGS);
+  clearDisplay(); drawHeader(hdrBuf);
+  drawScrollBar(registerSelectIdx, total);
+  for (int i=vis0; i<vis0+VISIBLE_ITEMS && i<total; i++) {
+    int rowY = CONTENT_Y + (i-vis0)*ROW_H;
+    bool sel = (i==registerSelectIdx);
+    if (sel) M5.Display.fillRect(0,rowY-1,232,ROW_H,COL_INFO);
+    M5.Display.setCursor(4,rowY); M5.Display.setTextSize(2);
     if (i<NUM_SUBJECTS) {
       bool hasTag=subjectHasTag[i];
-      M5.Display.setTextColor(sel?BLACK:WHITE,sel?WHITE:BLACK);
-      M5.Display.printf(" %s%s\n",subjects[i],hasTag?" [OK]":"");
+      M5.Display.setTextColor(sel?BLACK:COL_TEXT, sel?COL_INFO:BLACK);
+      M5.Display.printf("%s%s",subjects[i],hasTag?" [OK]":"");
     } else if (i==NUM_SUBJECTS) {
-      M5.Display.setTextColor(sel?BLACK:CYAN,sel?CYAN:BLACK);
-      M5.Display.printf(" Tag REHAT%s\n",hasRestTag?" [OK]":"");
+      M5.Display.setTextColor(sel?BLACK:COL_INFO, sel?COL_INFO:BLACK);
+      M5.Display.printf("REHAT%s",hasRestTag?" [OK]":"");
     } else {
-      M5.Display.setTextColor(sel?BLACK:DARKGREY,sel?DARKGREY:BLACK);
-      M5.Display.println(" < Kembali");
+      M5.Display.setTextColor(sel?BLACK:COL_DIM, sel?COL_INFO:BLACK);
+      M5.Display.print("< Kembali");
     }
   }
-  M5.Display.setTextColor(WHITE,BLACK);
+  M5.Display.setTextColor(COL_TEXT,BLACK);
   drawFooter("[A] Kitar","[B] Pilih");
 }
 
 void renderCalibrate() {
-  clearDisplay(); drawHeader("Kalibrasi IMU",NAVY);
-  M5.Display.setTextSize(1); M5.Display.setCursor(0,26);
+  clearDisplay(); drawHeader("Kalibrasi IMU");
+  M5.Display.setTextSize(2); M5.Display.setCursor(4,CONTENT_Y);
   if (calibrated) {
-    M5.Display.setTextColor(GREEN,BLACK); M5.Display.println("Telah dikalibrasi\n");
-    M5.Display.setTextColor(WHITE,BLACK);
-    M5.Display.printf("Tinggi: %.3f\nRendah: %.3f\n",
+    M5.Display.setTextColor(COL_GOOD,BLACK); M5.Display.println("Telah kalibrasi");
+    M5.Display.setTextColor(COL_DIM,BLACK); M5.Display.setTextSize(1);
+    M5.Display.printf("Tinggi: %.3f  Rendah: %.3f\n",
       calMagnitudeThresholdHigh,calMagnitudeThresholdLow);
   } else {
-    M5.Display.setTextColor(ORANGE,BLACK); M5.Display.println("Belum dikalibrasi\n");
-    M5.Display.setTextColor(WHITE,BLACK);
-    M5.Display.printf("Guna tetapan kepekaan:\n%s\n",
-      settingOptions[5][settings.imuSensitivity]);
+    M5.Display.setTextColor(COL_WARN,BLACK); M5.Display.println("Belum dikalibrasi");
+    M5.Display.setTextColor(COL_DIM,BLACK); M5.Display.setTextSize(1);
+    M5.Display.printf("Kepekaan: %s\n",settingOptions[5][settings.imuSensitivity]);
   }
-  M5.Display.println("\n[B] Mula kalibrasi 20s\n[A] Kembali");
+  M5.Display.setTextColor(COL_TEXT,BLACK);
+  M5.Display.setTextSize(2); M5.Display.setCursor(4,72);
+  M5.Display.println("[B] Kalibrasi 20s");
+  M5.Display.setTextSize(2); M5.Display.setCursor(4,92);
+  M5.Display.println("[A] Kembali");
   drawFooter("[A] Kembali","[B] Kalibrasi");
 }
 
 void renderSettings() {
-  clearDisplay(); drawHeader("Tetapan",NAVY);
-  M5.Display.setTextSize(1); M5.Display.setCursor(0,22);
-  for (int i=0;i<13;i++) {
-    bool sel=(i==settingsParamIdx);
+  const char* sLabels[] = {
+    "Amaran","Tidur","Getar","Gangguan",
+    "Selang Fokus","IMU","Rehat","Tingkap Kuiz"
+  };
+  int total = 13;
+  int vis0  = scrollStart(settingsParamIdx, total);
+  clearDisplay(); drawHeader("Tetapan");
+  drawScrollBar(settingsParamIdx, total);
+
+  for (int i=vis0; i<vis0+VISIBLE_ITEMS && i<total; i++) {
+    int rowY = CONTENT_Y + (i-vis0)*ROW_H;
+    bool sel = (i==settingsParamIdx);
+    if (sel) M5.Display.fillRect(0,rowY-1,232,ROW_H,COL_INFO);
+    M5.Display.setCursor(4,rowY); M5.Display.setTextSize(2);
+
     if (i<8) {
-      // Indices 0–7: adjustable parameters (7 original + quizWindow at 7)
       uint8_t val=0;
       switch(i){
         case 0: val=settings.warningTrigger;    break;
@@ -1685,33 +1834,35 @@ void renderSettings() {
         case 4: val=settings.deepFocusInterval; break;
         case 5: val=settings.imuSensitivity;    break;
         case 6: val=settings.restDuration;      break;
-        case 7: val=settings.quizWindow;        break;  // v9.1
+        case 7: val=settings.quizWindow;        break;
       }
-      M5.Display.setTextColor(sel?BLACK:WHITE,sel?WHITE:BLACK);
-      // For quiz window (item 7) show actual minutes, not S/S/P
-      if (i==7) {
-        const char* wLabels[]={"1min","3min","5min"};
-        M5.Display.printf(" %-16s[%s]\n",settingLabels[i],wLabels[val]);
-      } else {
-        M5.Display.printf(" %-16s[%s]\n",settingLabels[i],val==0?"S":(val==1?"S":"P"));
-      }
+      M5.Display.setTextColor(sel?BLACK:COL_TEXT, sel?COL_INFO:BLACK);
+      M5.Display.printf("%-12s[%d]", sLabels[i], val+1);
     } else if (i==8) {
-      M5.Display.setTextColor(sel?BLACK:ORANGE,sel?ORANGE:BLACK);
-      M5.Display.println(" > Padam Sejarah");
+      M5.Display.setTextColor(sel?BLACK:COL_WARN, sel?COL_INFO:BLACK);
+      M5.Display.print("Padam Sejarah");
     } else if (i==9) {
-      M5.Display.setTextColor(sel?BLACK:RED,sel?RED:BLACK);
-      M5.Display.println(" > Padam Semua Data");
+      M5.Display.setTextColor(sel?BLACK:COL_DANGER, sel?COL_INFO:BLACK);
+      M5.Display.print("Padam Semua");
     } else if (i==10) {
-      // v9: Companion mode toggle
-      uint16_t mc = companionMode ? GREEN : DARKGREY;
-      M5.Display.setTextColor(sel?BLACK:mc, sel?mc:BLACK);
-      M5.Display.printf(" Mod: %s\n", companionMode ? "Rakan [ON]" : "Solo  [OFF]");
+      uint16_t mc = companionMode ? COL_GOOD : COL_DIM;
+      M5.Display.setTextColor(sel?BLACK:mc, sel?COL_INFO:BLACK);
+      M5.Display.printf("Mod Rakan  [%s]", companionMode?"ON":"OFF");
     } else if (i==11) {
-      M5.Display.setTextColor(sel?BLACK:DARKGREY,sel?DARKGREY:BLACK);
-      M5.Display.println(" < Kembali");
+      uint16_t dc = demoMode ? COL_WARN : COL_DIM;
+      M5.Display.setTextColor(sel?BLACK:dc, sel?COL_INFO:BLACK);
+      M5.Display.printf("Mod Demo   [%s]", demoMode?"ON":"OFF");
+    } else if (i==12) {
+      M5.Display.setTextColor(sel?BLACK:COL_DIM, sel?COL_INFO:BLACK);
+      M5.Display.print("< Kembali");
     }
   }
-  M5.Display.setTextColor(WHITE,BLACK);
+  M5.Display.setTextColor(COL_TEXT,BLACK);
+
+  // Custom footer with hint on left — overrides standard footer
+  M5.Display.fillRect(0,FTR_Y,240,FTR_H,COL_ACCENT);
+  M5.Display.setTextColor(COL_INFO,COL_ACCENT); M5.Display.setTextSize(1);
+  M5.Display.setCursor(4,FTR_Y+7);
   if (settingsParamIdx<8) {
     uint8_t val=0;
     switch(settingsParamIdx){
@@ -1724,27 +1875,35 @@ void renderSettings() {
       case 6: val=settings.restDuration;      break;
       case 7: val=settings.quizWindow;        break;
     }
-    M5.Display.setTextColor(CYAN,BLACK); M5.Display.setCursor(0,111);
-    M5.Display.printf("<%s>",settingOptions[settingsParamIdx][val]);
-    M5.Display.setTextColor(WHITE,BLACK);
+    M5.Display.print(settingOptions[settingsParamIdx][val]);
   } else if (settingsParamIdx==10) {
-    M5.Display.setTextColor(CYAN,BLACK); M5.Display.setCursor(0,111);
-    M5.Display.print("<[B] togol mod>");
-    M5.Display.setTextColor(WHITE,BLACK);
+    M5.Display.print("[B] togol mod rakan");
+  } else if (settingsParamIdx==11) {
+    M5.Display.print("[B] togol mod demo");
   }
-  drawFooter("[A] Kitar","[B] Ubah/Pilih");
+  M5.Display.setTextColor(COL_TEXT,COL_ACCENT);
+  M5.Display.setCursor(192,FTR_Y+7); M5.Display.print("[B]Pilih");
+  M5.Display.setTextColor(COL_TEXT,BLACK);
 }
+
 
 void renderConfirmReset() {
   clearDisplay();
-  uint16_t hc=(confirmResetType==1)?RED:ORANGE;
-  drawHeader(confirmResetType==1?"Padam Semua Data?":"Padam Sejarah?",hc);
-  M5.Display.setTextSize(1); M5.Display.setCursor(0,30);
+  uint16_t hc=(confirmResetType==1)?COL_DANGER:COL_WARN;
+  drawHeader(confirmResetType==1?"Padam Semua?":"Padam Sejarah?",hc);
+  M5.Display.setTextSize(2); M5.Display.setCursor(4,CONTENT_Y);
   if (confirmResetType==1) {
-    M5.Display.println("Akan dipadam:\n- Sejarah sesi\n- Kalibrasi\n- Tag NFC\n- Tetapan\n\nPeranti akan restart.");
+    M5.Display.setTextColor(COL_DANGER,BLACK);
+    M5.Display.println("Padam semua data");
+    M5.Display.setTextColor(COL_DIM,BLACK); M5.Display.setTextSize(1);
+    M5.Display.println("Sejarah, kalibrasi,\ntag & tetapan.\nPeranti akan restart.");
   } else {
-    M5.Display.println("Semua sejarah sesi\nakan dipadam.\n\nKalibrasi dan tag\ndikekalkan.");
+    M5.Display.setTextColor(COL_WARN,BLACK);
+    M5.Display.println("Padam sejarah sesi");
+    M5.Display.setTextColor(COL_DIM,BLACK); M5.Display.setTextSize(1);
+    M5.Display.println("Kalibrasi dan tag\ndikekalkan.");
   }
+  M5.Display.setTextColor(COL_TEXT,BLACK);
   drawFooter("[A] Batal","[B] Sahkan");
 }
 
@@ -1771,6 +1930,14 @@ void renderCurrentScreen() {
 // BtnA = front large button, BtnB = side small button
 // wasPressed() behaviour is identical to v7
 void handleBtnA() {
+  // v10.4: drift quiz owns BtnA — cycle options, silence repeating alert
+  if (driftQuizActive && currentScreen == SCREEN_QUIZ_QUESTION) {
+    quizState.selectedOpt = (quizState.selectedOpt + 1) % 4;
+    lastDriftAlertMs = millis();  // reset alert timer on any interaction
+    driftQuizStartMs = millis();  // v10.5: reset timeout — active student stays alive
+    lastDisplayRefresh = 0;
+    return;
+  }
   // v10.1: Stage-aware BtnA during active session (not paused, not in quiz)
   if (sessionActive && !sessionPaused) {
     if (currentWarnStage == WARN_S3) {
@@ -1784,7 +1951,7 @@ void handleBtnA() {
       stageEnteredMs   = 0;
       inWarning        = false;
       showNotification("Rehat sebentar...");
-      Serial.printf("[WARN] Snuz diaktif (%lus)\n", SNOOZE_MS / 1000);
+      Serial.printf("[WARN] Snuz diaktif (%lus)\n", (demoMode?DEMO_SNOOZE_MS:REAL_SNOOZE_MS) / 1000);
       lastDisplayRefresh=0; return;
     }
     // Stage 0: BtnA falls through to normal home menu handling below
@@ -1838,6 +2005,36 @@ void handleBtnA() {
 }
 
 void handleBtnB() {
+  // v10.4: drift quiz owns BtnB — submit answer, then show result (non-blocking)
+  if (driftQuizActive && currentScreen == SCREEN_QUIZ_QUESTION) {
+    int qIdx = quizState.currentIdx;
+    int chosen = quizState.selectedOpt;
+    int correct = quizState.questions[qIdx].correctIndex;
+    quizState.resultCorrect = (chosen == correct);
+
+    // POST answer to server (blocking — can take up to COMP_TIMEOUT_MS)
+    if (companionReady && serverSessionId >= 0) {
+      StaticJsonDocument<128> aDoc;
+      aDoc["session_id"]  = serverSessionId;
+      aDoc["question_id"] = quizState.questions[qIdx].id;
+      aDoc["chosen_index"]= chosen;
+      String aBody; serializeJson(aDoc, aBody);
+      postToServer("/api/session/answer", aBody);
+    }
+
+    // v10.5: non-blocking result — switch to result screen, loop() auto-returns
+    // after 2s. Stamp resultShowTime AFTER the blocking POST and beep so the
+    // 2-second display window starts when the result actually appears on screen
+    // (otherwise slow network eats into the window and the result flashes by).
+    buzz_confirm();
+    quizState.resultShowTime = millis();
+    driftResultActive = true;
+    currentScreen     = SCREEN_QUIZ_RESULT;
+    lastDisplayRefresh = 0;
+    Serial.println("[QUIZ] Kuiz drift dijawab — papar keputusan");
+    return;
+  }
+
   if (sessionActive&&!sessionPaused&&
       (currentState==STATE_SLEEPING||currentState==STATE_WARNING)) return;
 
@@ -1916,9 +2113,8 @@ void handleBtnB() {
       bool correct = (quizState.selectedOpt ==
                       quizState.questions[qIdx].correctIndex);
       quizState.resultCorrect   = correct;
-      quizState.resultShowTime  = millis();
       if (correct) quizState.score++;
-      // POST answer to server
+      // POST answer to server (blocking)
       if (companionReady && serverSessionId >= 0) {
         StaticJsonDocument<128> aDoc;
         aDoc["session_id"]   = serverSessionId;
@@ -1927,6 +2123,8 @@ void handleBtnB() {
         String aBody; serializeJson(aDoc, aBody);
         postToServer("/api/session/answer", aBody);
       }
+      // v10.5: stamp AFTER the POST so the 2s window starts when result renders
+      quizState.resultShowTime  = millis();
       currentScreen = SCREEN_QUIZ_RESULT;
       break;
     }
@@ -2010,6 +2208,13 @@ void handleBtnB() {
           companionMode ? "Rakan" : "Solo");
         showNotification(companionMode ? "Mod: Rakan (restart)" : "Mod: Solo (restart)");
       } else if (settingsParamIdx==11) {
+        // v10.2: toggle Demo/Real timing and persist to NVS
+        demoMode = !demoMode;
+        prefs.putBool("demo_mode", demoMode);
+        buzz_confirm();
+        Serial.printf("[v10.2] Mod masa ditukar: %s\n", demoMode ? "DEMO" : "Nyata");
+        showNotification(demoMode ? "Mod Demo: AKTIF" : "Mod Demo: Nyata");
+      } else if (settingsParamIdx==12) {
         currentScreen=SCREEN_HOME;
       }
       break;
@@ -2800,12 +3005,12 @@ void fetchQuizQuestions(int subjectId, const char* topic) {
 
   HTTPClient http;
   char url[192];
-  // URL-encode the topic: spaces become %20. For simplicity we pass as-is;
-  // Flask's request.args handles basic percent-encoding automatically.
+  // v10.4: URL-encode topic so spaces/special chars don't break the request line
+  String encodedTopic = topic ? urlEncode(topic) : "";
   snprintf(url, sizeof(url),
     "http://%s:%d/api/quiz/questions?subject_id=%d&topic=%s&session_id=%d",
     COMP_SERVER_IP, COMP_SERVER_PORT, subjectId,
-    topic ? topic : "", serverSessionId);
+    encodedTopic.c_str(), serverSessionId);
 
   http.begin(url);
   http.setTimeout(COMP_TIMEOUT_MS);
@@ -2865,85 +3070,132 @@ void handleDriftQuizResponse(const String& body) {
     strlcpy(quizState.questions[0].opts[i], opts[i] | "", MAX_OPT_TEXT);
   }
   quizState.selectedOpt = 0;
+  driftQuizActive  = true;       // v10.4: pause monitoring, own buttons
+  lastDriftAlertMs = millis();   // start repeating alert immediately
+  driftQuizStartMs = millis();   // v10.5: start timeout clock
+  buzz_driftAlert();             // first alert on entry
   currentScreen = SCREEN_QUIZ_QUESTION;
   Serial.printf("[QUIZ] Kuiz drift: soalan ID %d\n", quizState.questions[0].id);
 }
 
 // renderQuizSubject — subject picker screen
 void renderQuizSubject() {
-  clearDisplay();
-  drawHeader("Mod Kuiz", 0x1F5F);   // dark teal
-  M5.Display.setTextSize(1); M5.Display.setCursor(0,26);
-  M5.Display.println("Pilih subjek:\n");
-  for (int i=0;i<NUM_SUBJECTS;i++) {
-    M5.Display.setTextColor(i==quizSubjectIdx?BLACK:WHITE,
-                            i==quizSubjectIdx?WHITE:BLACK);
-    M5.Display.printf(" %s\n", subjects[i]);
+  int total = NUM_SUBJECTS;
+  int vis0  = scrollStart(quizSubjectIdx, total);
+  clearDisplay(); drawHeader("Mod Kuiz");
+  drawScrollBar(quizSubjectIdx, total);
+  for (int i=vis0; i<vis0+VISIBLE_ITEMS && i<total; i++) {
+    int rowY = CONTENT_Y + (i-vis0)*ROW_H;
+    bool sel = (i==quizSubjectIdx);
+    if (sel) M5.Display.fillRect(0,rowY-1,232,ROW_H,COL_INFO);
+    M5.Display.setCursor(4,rowY); M5.Display.setTextSize(2);
+    M5.Display.setTextColor(sel?BLACK:COL_TEXT, sel?COL_INFO:BLACK);
+    M5.Display.print(subjects[i]);
   }
-  M5.Display.setTextColor(WHITE,BLACK);
+  M5.Display.setTextColor(COL_TEXT,BLACK);
   drawFooter("[A] Kitar","[B] Pilih");
 }
 
-// renderQuizTopic — v9.3: topic picker after subject selected
 void renderQuizTopic() {
-  clearDisplay();
-  drawHeader("Pilih Topik", 0x1F5F);
-  M5.Display.setTextSize(1); M5.Display.setCursor(0,22);
-  M5.Display.setTextColor(DARKGREY,BLACK);
-  M5.Display.printf("%s\n\n", subjects[quizSubjectIdx]);
-  M5.Display.setTextColor(WHITE,BLACK);
+  char hdr[28]; snprintf(hdr,28,"Topik — %s",subjects[quizSubjectIdx]);
+  clearDisplay(); drawHeader(hdr);
+
   if (quizTopicCount == 0) {
-    M5.Display.setTextColor(ORANGE,BLACK);
-    M5.Display.println("Tiada topik tersedia");
-    M5.Display.setTextColor(WHITE,BLACK);
+    M5.Display.setTextColor(COL_WARN,BLACK); M5.Display.setTextSize(2);
+    M5.Display.setCursor(4,CONTENT_Y+10);
+    M5.Display.println("Tiada topik");
+    M5.Display.setTextColor(COL_TEXT,BLACK);
   } else {
-    for (int i=0;i<quizTopicCount;i++) {
-      M5.Display.setTextColor(i==quizTopicIdx?BLACK:WHITE,
-                              i==quizTopicIdx?WHITE:BLACK);
-      // Truncate long topic names to fit display width
-      char trunc[28]; strlcpy(trunc, quizTopics[i], 28);
-      M5.Display.printf(" %s\n", trunc);
+    int vis0 = scrollStart(quizTopicIdx, quizTopicCount);
+    drawScrollBar(quizTopicIdx, quizTopicCount);
+    for (int i=vis0; i<vis0+VISIBLE_ITEMS && i<quizTopicCount; i++) {
+      int rowY = CONTENT_Y + (i-vis0)*ROW_H;
+      bool sel = (i==quizTopicIdx);
+      if (sel) M5.Display.fillRect(0,rowY-1,232,ROW_H,COL_INFO);
+      M5.Display.setCursor(4,rowY); M5.Display.setTextSize(2);
+      M5.Display.setTextColor(sel?BLACK:COL_TEXT, sel?COL_INFO:BLACK);
+      char trunc[17]; strlcpy(trunc, quizTopics[i], 17);
+      M5.Display.print(trunc);
     }
   }
-  M5.Display.setTextColor(WHITE,BLACK);
+  M5.Display.setTextColor(COL_TEXT,BLACK);
   drawFooter("[A] Kitar","[B] Pilih");
 }
 
 // renderQuizQuestion — question + options screen
+// v10.6: Quiz question screen redesigned to prevent option text cutoff.
+// Question wraps at top (capped). All four options listed compact; the SELECTED
+// option expands into a highlighted band showing its full text (wrapping up to
+// 2 lines), so whatever the student is about to pick is always fully readable.
+// Helper: print a string with word-wrap starting at (x,y), max `maxChars` per
+// line and up to `maxLines` lines; returns the y after the last line drawn.
+int printWrapped(const char* s, int x, int y, int maxChars, int maxLines, int lineH) {
+  int len = strlen(s);
+  int pos = 0, line = 0;
+  while (pos < len && line < maxLines) {
+    int take = len - pos;
+    if (take > maxChars) {
+      // try to break at the last space within the window
+      take = maxChars;
+      int brk = -1;
+      for (int i = pos; i < pos + maxChars && i < len; i++)
+        if (s[i] == ' ') brk = i;
+      if (brk > pos) take = brk - pos;
+    }
+    char buf[48];
+    int n = (take < 47) ? take : 47;
+    strncpy(buf, s + pos, n); buf[n] = '\0';
+    M5.Display.setCursor(x, y + line * lineH);
+    M5.Display.print(buf);
+    pos += take;
+    while (pos < len && s[pos] == ' ') pos++;  // skip the space we broke on
+    line++;
+  }
+  return y + line * lineH;
+}
+
 void renderQuizQuestion() {
   clearDisplay();
   int qIdx = quizState.currentIdx;
   char header[24];
-  snprintf(header, sizeof(header), "Soalan %d/%d",
-           qIdx+1, quizState.totalLoaded);
-  drawHeader(header, 0x1F5F);
+  snprintf(header, sizeof(header), "Soalan %d/%d", qIdx+1, quizState.totalLoaded);
+  drawHeader(header, COL_ACCENT);
 
-  M5.Display.setTextSize(1); M5.Display.setCursor(0,22);
+  // Question text — wraps, capped at 3 lines (y=24..50, 9px line height)
+  M5.Display.setTextSize(1); M5.Display.setTextColor(WHITE,BLACK);
+  printWrapped(quizState.questions[qIdx].text, 0, CONTENT_Y, 40, 3, 9);
 
-  // Subject label
-  M5.Display.setTextColor(DARKGREY,BLACK);
-  M5.Display.printf("%s\n", subjects[quizSubjectIdx]);
-  M5.Display.setTextColor(WHITE,BLACK);
+  // Divider under question
+  M5.Display.drawFastHLine(0, 52, 240, COL_ACCENT);
 
-  // Question text — wraps automatically at display width
-  M5.Display.setCursor(0,32);
-  M5.Display.setTextSize(1);
-  // Truncate to first 120 chars to leave room for options
-  char truncQ[121];
-  strlcpy(truncQ, quizState.questions[qIdx].text, 121);
-  M5.Display.println(truncQ);
-
-  // Options — highlight selected
-  M5.Display.setCursor(0,76);
-  const char* optLabels[4]={"A","B","C","D"};
+  // Options region: y=55..113. Selected option gets an expanded highlighted band.
+  const char* optLabels[4] = {"A","B","C","D"};
+  int y = 55;
   for (int i=0;i<4;i++) {
-    bool sel=(i==quizState.selectedOpt);
-    M5.Display.setTextColor(sel?BLACK:WHITE, sel?CYAN:BLACK);
-    char truncOpt[28];
-    strlcpy(truncOpt, quizState.questions[qIdx].opts[i], 28);
-    M5.Display.printf("%s.%s\n", optLabels[i], truncOpt);
+    bool sel = (i==quizState.selectedOpt);
+    const char* opt = quizState.questions[qIdx].opts[i];
+    if (sel) {
+      // Expanded: highlighted band, full text wrapped up to 2 lines
+      int lines = (strlen(opt) > 36) ? 2 : 1;
+      int bandH = lines*9 + 4;
+      M5.Display.fillRect(0, y-1, 232, bandH, CYAN);
+      M5.Display.setTextColor(BLACK, CYAN);
+      char lead[3]; snprintf(lead,3,"%s.",optLabels[i]);
+      M5.Display.setCursor(2, y+1); M5.Display.print(lead);
+      printWrapped(opt, 16, y+1, 36, 2, 9);
+      M5.Display.setTextColor(WHITE, BLACK);
+      y += bandH + 1;
+    } else {
+      // Compact: one truncated line, dark grey
+      M5.Display.setTextColor(DARKGREY, BLACK);
+      M5.Display.setCursor(2, y);
+      char buf[40]; snprintf(buf, sizeof(buf), "%s.%s", optLabels[i], opt);
+      if (strlen(buf) > 39) buf[39] = '\0';
+      M5.Display.print(buf);
+      M5.Display.setTextColor(WHITE, BLACK);
+      y += 10;
+    }
   }
-  M5.Display.setTextColor(WHITE,BLACK);
   drawFooter("[A] Kitar","[B] Jawab");
 }
 
@@ -2952,28 +3204,47 @@ void renderQuizResult() {
   clearDisplay();
   int qIdx = quizState.currentIdx;
   if (quizState.resultCorrect) {
-    drawHeader("Betul! ✓", GREEN);
-    M5.Display.setTextSize(2); M5.Display.setCursor(30,60);
-    M5.Display.setTextColor(GREEN,BLACK);
+    drawHeader("Betul! ✓", COL_GOOD);
+    M5.Display.setTextSize(3); M5.Display.setCursor(30,50);
+    M5.Display.setTextColor(COL_GOOD,BLACK);
     M5.Display.println("BETUL!");
   } else {
-    drawHeader("Salah ✗", RED);
-    M5.Display.setTextSize(1); M5.Display.setCursor(0,40);
-    M5.Display.setTextColor(RED,BLACK);
-    M5.Display.println("Salah.\nJawapan betul:");
-    M5.Display.setTextSize(1); M5.Display.setCursor(0,70);
-    M5.Display.setTextColor(GREEN,BLACK);
+    drawHeader("Salah ✗", COL_DANGER);
+    M5.Display.setTextSize(2); M5.Display.setCursor(4,CONTENT_Y);
+    M5.Display.setTextColor(COL_DANGER,BLACK);
+    M5.Display.println("Salah.");
+    M5.Display.setTextSize(1); M5.Display.setCursor(4,CONTENT_Y+20);
+    M5.Display.setTextColor(COL_DIM,BLACK);
+    M5.Display.println("Jawapan betul:");
+    M5.Display.setTextColor(COL_GOOD,BLACK); M5.Display.setTextSize(1);
     const char* optLabels[4]={"A","B","C","D"};
     int ci = quizState.questions[qIdx].correctIndex;
-    char truncOpt[32];
-    strlcpy(truncOpt, quizState.questions[qIdx].opts[ci], 32);
-    M5.Display.printf("%s. %s", optLabels[ci], truncOpt);
+    // Build "A. <full answer>" and wrap so long answers are not cut off
+    char line[80];
+    snprintf(line, sizeof(line), "%s. %s", optLabels[ci], quizState.questions[qIdx].opts[ci]);
+    printWrapped(line, 4, CONTENT_Y+32, 40, 4, 10);
   }
-  M5.Display.setTextColor(WHITE,BLACK);
+  M5.Display.setTextColor(COL_TEXT,BLACK);
   drawFooter("","[B] Terus");
 
   // Auto-advance after 2 seconds
   if (millis() - quizState.resultShowTime >= 2000) {
+    // v10.5: drift quiz result — resume monitoring from clean Stage 0
+    if (driftResultActive) {
+      driftResultActive = false;
+      driftQuizActive   = false;
+      lastDriftAlertMs  = 0;
+      driftQuizStartMs  = 0;
+      currentWarnStage  = WARN_S0;
+      stageEnteredMs    = 0;
+      inWarning         = false;
+      snoozeActive      = false;
+      currentState      = STATE_READING;
+      currentScreen     = SCREEN_HOME;
+      lastDisplayRefresh = 0;
+      Serial.println("[QUIZ] Kuiz drift selesai — pantauan disambung dari Tahap 0");
+      return;
+    }
     quizState.currentIdx++;
     if (quizState.currentIdx >= quizState.totalLoaded) {
       currentScreen = SCREEN_QUIZ_SUMMARY;
@@ -2985,22 +3256,21 @@ void renderQuizResult() {
   }
 }
 
-// renderQuizSummary — end of set score
 void renderQuizSummary() {
   clearDisplay();
-  drawHeader("Tamat Kuiz!", 0x1F5F);
-  M5.Display.setTextSize(1); M5.Display.setCursor(0,26);
-  M5.Display.setTextColor(DARKGREY,BLACK);
-  M5.Display.printf("%s\n\n", subjects[quizSubjectIdx]);
-  M5.Display.setTextColor(WHITE,BLACK);
-  M5.Display.setTextSize(2); M5.Display.setCursor(20,50);
-  M5.Display.printf("%d / %d\n", quizState.score, quizState.totalLoaded);
-  M5.Display.setTextSize(1); M5.Display.setCursor(0,88);
+  drawHeader("Tamat Kuiz!");
+  M5.Display.setTextSize(1); M5.Display.setCursor(4,CONTENT_Y);
+  M5.Display.setTextColor(COL_DIM,BLACK);
+  M5.Display.printf("%s", subjects[quizSubjectIdx]);
+  M5.Display.setTextColor(COL_TEXT,BLACK);
+  M5.Display.setTextSize(3); M5.Display.setCursor(20,36);
+  M5.Display.printf("%d / %d", quizState.score, quizState.totalLoaded);
   int pct = (quizState.totalLoaded > 0)
             ? (quizState.score * 100 / quizState.totalLoaded) : 0;
-  M5.Display.setTextColor(pct>=70?GREEN:(pct>=40?ORANGE:RED), BLACK);
-  M5.Display.printf("Markah: %d%%\n", pct);
-  M5.Display.setTextColor(WHITE,BLACK);
+  M5.Display.setTextSize(2); M5.Display.setCursor(4,76);
+  M5.Display.setTextColor(pct>=70?COL_GOOD:(pct>=40?COL_WARN:COL_DANGER), BLACK);
+  M5.Display.printf("Markah: %d%%", pct);
+  M5.Display.setTextColor(COL_TEXT,BLACK);
   drawFooter("[A] Ulang","[B] Keluar");
 }
 
@@ -3010,14 +3280,22 @@ void setup() {
   auto cfg = M5.config();
   M5.begin(cfg);
   Serial.begin(115200);
-  Serial.println("[BOOT] StudyAid v10.1 starting...");
+  Serial.println("[BOOT] StudyAid v10.8 starting...");
   Serial.println("[BOOT] Hardware: M5StickS3 + M5 Unit NFC (ST25R3916)");
 
   M5.Display.setRotation(3);
   clearDisplay();
-  M5.Display.setTextSize(2); M5.Display.setCursor(30,30); M5.Display.println("StudyAid");
-  M5.Display.setTextSize(1); M5.Display.setCursor(70,58); M5.Display.println("v10.1");
-  delay(1000);
+  // Boot splash — school identity
+  M5.Display.fillRect(0,0,240,HDR_H,COL_ACCENT);
+  M5.Display.setTextColor(COL_TEXT,COL_ACCENT); M5.Display.setTextSize(1);
+  M5.Display.setCursor(4,7); M5.Display.print("SMK Gudang Rasau (SEGRA)");
+  M5.Display.setTextColor(COL_TEXT,BLACK);
+  M5.Display.setTextSize(2); M5.Display.setCursor(30,36); M5.Display.println("StudyAid");
+  M5.Display.setTextColor(COL_DIM,BLACK); M5.Display.setTextSize(1);
+  M5.Display.setCursor(4,60); M5.Display.print("Sistem Pemantauan Tabiat Belajar");
+  M5.Display.setCursor(192,60); M5.Display.print("v10.8");
+  M5.Display.setTextColor(COL_TEXT,BLACK);
+  delay(2000);
 
   // Speaker volume — set once at boot
   // Adjust 128 (0-255) if volume is too loud or too quiet on hardware
@@ -3100,9 +3378,36 @@ void loop() {
 
   if (sessionActive) {
     if (!sessionPaused) {
-      if (millis()-lastStateSample>=200) { lastStateSample=millis(); updateIMUState(); }
-      if (currentState==STATE_SLEEPING&&millis()-lastSleepingBuzz>=SLEEPING_BUZZ_INTERVAL) {
-        lastSleepingBuzz=millis(); buzz_sleeping();
+      // v10.4: freeze monitoring entirely while drift quiz is waiting for answer
+      if (driftQuizActive) {
+        // v10.5: timeout — if unanswered after the mode-dependent limit, silently
+        // dismiss and restore S3/WARNING so the Tidak Aktif escalation resumes
+        // (a sleeping student who ignores the quiz still gets the sleeping alarm).
+        unsigned long quizTimeout = demoMode ? DEMO_QUIZ_TIMEOUT_MS : REAL_QUIZ_TIMEOUT_MS;
+        if (millis() - driftQuizStartMs >= quizTimeout) {
+          driftQuizActive  = false;
+          lastDriftAlertMs = 0;
+          driftQuizStartMs = 0;
+          // Restore S3 warning state so escalation timer continues from now
+          currentWarnStage = WARN_S3;
+          currentState     = STATE_WARNING;
+          warningStartTime  = millis();
+          stageEnteredMs    = millis();
+          currentScreen    = SCREEN_HOME;
+          lastDisplayRefresh = 0;
+          Serial.println("[QUIZ] Kuiz drift tamat masa (tiada jawapan) — pantauan disambung");
+        } else {
+          // Repeating alert every 1.5s until student presses a button
+          if (millis() - lastDriftAlertMs >= 1500) {
+            lastDriftAlertMs = millis();
+            buzz_driftAlert();
+          }
+        }
+      } else {
+        if (millis()-lastStateSample>=200) { lastStateSample=millis(); updateIMUState(); }
+        if (currentState==STATE_SLEEPING&&millis()-lastSleepingBuzz>=SLEEPING_BUZZ_INTERVAL) {
+          lastSleepingBuzz=millis(); buzz_sleeping();
+        }
       }
     } else {
       unsigned long restElapsed=millis()-restTimerStart;
@@ -3128,7 +3433,7 @@ void loop() {
   // Fires every 15 seconds during an active Companion mode session.
   // Uses postToServer() (fire-and-forget) so it never blocks the loop.
   if (sessionActive && companionReady && serverSessionId >= 0) {
-    if (millis() - lastFocusReportMs >= FOCUS_REPORT_INTERVAL_MS) {
+    if (millis() - lastFocusReportMs >= (demoMode?5000UL:FOCUS_REPORT_INTERVAL_MS)) {
       lastFocusReportMs = millis();
       unsigned long elapsed = millis() - sessionStartTime - totalPausedMs;
       StaticJsonDocument<96> upDoc;
