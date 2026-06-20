@@ -1,5 +1,5 @@
 /*
- * StudyAid Firmware v10.8
+ * StudyAid Firmware v11.0
  * Hardware: M5StickS3 + M5 Unit NFC (ST25R3916, I2C via Grove Port A)
  *
  * Button mapping:
@@ -54,6 +54,16 @@
  *           Sains, Pendidikan Moral
  *           Quiz Mode: topic picker screen added between subject and question
  *           New API call: GET /api/quiz/topics?subject_id=X
+ *   v11.0 - Activity-aware sensing via three study profiles (Menulis/Membaca/Campuran).
+ *           Profiles are AI-classified at planning time (server-side) and fetched at
+ *           session start. Each profile scales the warning-ladder timings (0.5x/1.0x/2.0x)
+ *           and Membaca adds an orientation trust rule: Statik Tegak (arm raised, holding
+ *           material) does NOT advance the warning ladder — only Statik Lintang escalates.
+ *           New SCREEN_SESSION_TOPIC topic picker inserted between subject selection and
+ *           session start. GET /api/quiz/topics now returns {topic, profile} objects and
+ *           accepts device_id for student-scoped planned topics. POST /api/session/start
+ *           now sends "topic" and receives "profile" in the response. applyProfileTimings()
+ *           scales all four ladder timings (S1/S2/S3 + Sleeping) at session start.
  *   v10.8 - Fixes: "Salah" result screen now wraps the correct answer (was cut
  *           off when long). Quiz question selection strictly scoped to subject —
  *           removed cross-subject fallback in both _pick_question (drift) and
@@ -231,6 +241,7 @@ const char* engagementNames[] = { "Fokus", "Inaktif", "Tidak Fokus" };
 enum AppScreen {
   SCREEN_HOME,
   SCREEN_START_SESSION,
+  SCREEN_SESSION_TOPIC,   // v11: topic picker inserted between subject select and session start
   SCREEN_REGISTER_TAG,
   SCREEN_CALIBRATE,
   SCREEN_SETTINGS,
@@ -367,6 +378,23 @@ bool        driftResultActive = false; // v10.5: showing drift quiz result (non-
 const char* deviceId       = "studyaid-01";   // change to "studyaid-02" for second device
 const char* studentName    = "M. Khalish";    // change to "Rania Batrisyia" for second device
 
+// ─── v11: Study profiles ───────────────────────────────────────────────────
+// Three profiles change (a) warning-ladder timings and (b) for Membaca, an
+// orientation trust rule (Statik Tegak = holding material = trusted, not warned).
+// Profiles are AI-classified at planning time and fetched from the server at
+// session start; teacher-overridable via the dashboard.
+enum StudyProfile { PROFILE_CAMPURAN, PROFILE_MENULIS, PROFILE_MEMBACA };
+StudyProfile activeProfile = PROFILE_CAMPURAN;
+const char*  profileNames[] = { "Campuran", "Menulis", "Membaca" };
+
+// Scaled timing variables — computed by applyProfileTimings() at session start.
+// Multipliers: Menulis 0.5x, Campuran 1.0x, Membaca 2.0x vs the demo/real base.
+// All warning-ladder comparisons use these instead of the raw DEMO_*/REAL_* macros.
+unsigned long activeStage1Ms   = DEMO_STAGE1_MS;   // default to demo until first session
+unsigned long activeStage2Ms   = DEMO_STAGE2_MS;
+unsigned long activeStage3Ms   = DEMO_STAGE3_MS;
+unsigned long activeSleepingMs = 15000UL;           // default; overwritten at session start
+
 // v9: Forward declaration — postToServer() body is defined later in the file,
 // after setup(). Without this the compiler rejects the call inside endSession().
 bool postToServer(const char* path, const String& jsonBody);
@@ -410,6 +438,16 @@ char quizTopics[MAX_QUIZ_TOPICS][MAX_TOPIC_LEN];
 int  quizTopicCount = 0;
 int  quizTopicIdx   = 0;    // topic picker cursor
 
+// v11: Session topic picker state (separate from Quiz Mode topic picker).
+// MAX_TOPIC_LEN must be defined above before this block.
+// Populated by fetchSessionTopics() when student confirms subject at session start.
+#define MAX_SESSION_TOPICS 12   // planned topics (up to ~10) + Ulangkaji Bebas sentinel
+char sessionTopicNames[MAX_SESSION_TOPICS][MAX_TOPIC_LEN];
+char sessionTopicProfiles[MAX_SESSION_TOPICS][12];  // "Menulis","Membaca","Campuran"
+int  sessionTopicCount = 0;
+int  sessionTopicIdx   = 0;
+char activeTopicName[MAX_TOPIC_LEN] = "";  // "" = Ulangkaji Bebas (free study)
+
 // ─── v9.2: Periodic focus report ───────────────────────────────────────────
 // POSTs current focus score to /api/session/update every 15 seconds during
 // an active Companion mode session. Enables live monitor on dashboard.
@@ -434,6 +472,12 @@ void renderQuizQuestion();
 void renderQuizResult();
 void renderQuizSummary();
 void handleDriftQuizResponse(const String& responseBody);
+
+// v11: Forward declarations for session topic picker and profile timing functions
+void fetchSessionTopics(int subjectId);  // GET /api/quiz/topics with device_id
+void applyProfileTimings();              // scale S1/S2/S3/Sleep timings by active profile
+void renderSessionTopic();               // SCREEN_SESSION_TOPIC render function
+int  printWrapped(const char* s, int x, int y, int maxChars, int maxLines, int lineH);
 
 // v10.0: Forward declarations for posture/engagement functions
 float            getMagVariance();
@@ -1055,13 +1099,22 @@ void updateIMUState() {
     }
 
     if (!snoozeActive && currentMotion == MOTION_STATIK) {
+
+      // v11: Membaca profile trusts a raised arm — Statik Tegak means the student
+      // is holding their book/notes, not drifting. Reset the stage clock on every
+      // Tegak sample so the ladder never advances while the arm is up.
+      // Only Statik Lintang (flat, resting arm) escalates in Membaca mode.
+      if (activeProfile == PROFILE_MEMBACA && currentOrientation == ORIENT_TEGAK) {
+        stageEnteredMs = millis();  // keep resetting; S0 timer never fires
+      } else {
+
       unsigned long timeInStage = millis() - stageEnteredMs;
 
       switch (currentWarnStage) {
         case WARN_S0:
           // Begin timing disengagement from first still moment
           if (stageEnteredMs == 0) stageEnteredMs = millis();
-          if (millis() - stageEnteredMs >= (demoMode?DEMO_STAGE1_MS:REAL_STAGE1_MS)) {
+          if (millis() - stageEnteredMs >= activeStage1Ms) {
             currentWarnStage = WARN_S1;
             stageEnteredMs   = millis();
             inWarning        = true;  // shim
@@ -1071,7 +1124,7 @@ void updateIMUState() {
           break;
 
         case WARN_S1:
-          if (timeInStage >= (demoMode?DEMO_STAGE2_MS:REAL_STAGE2_MS)) {
+          if (timeInStage >= activeStage2Ms) {
             currentWarnStage = WARN_S2;
             stageEnteredMs   = millis();
             buzz_nudge();
@@ -1080,7 +1133,7 @@ void updateIMUState() {
           break;
 
         case WARN_S2:
-          if (timeInStage >= (demoMode?DEMO_STAGE3_MS:REAL_STAGE3_MS)) {
+          if (timeInStage >= activeStage3Ms) {
             currentWarnStage  = WARN_S3;
             stageEnteredMs    = millis();
             warningStartTime  = millis();  // shim for overlay countdown
@@ -1144,9 +1197,9 @@ void updateIMUState() {
 
         case WARN_S3:
           // Remain in Stage 3 — keep IMUState as WARNING or SLEEPING for overlay
-          // Escalate to SLEEPING after SLEEPING_TRIGGER_MS (existing behaviour)
+          // Escalate to SLEEPING after activeSleepingMs (profile-scaled)
           if (currentState == STATE_WARNING &&
-              (millis() - warningStartTime >= SLEEPING_TRIGGER_MS)) {
+              (millis() - warningStartTime >= activeSleepingMs)) {
             currentState = STATE_SLEEPING;
             sleepingCount++;  // kept for session summary display
             lastSleepingBuzz = millis();
@@ -1162,6 +1215,8 @@ void updateIMUState() {
           }
           break;
       }
+
+      }  // end else (Membaca+Tegak guard)
 
     } else if (!snoozeActive && currentMotion == MOTION_AKTIF) {
       // Moving — reset stage 0 timer so it only starts counting from stillness
@@ -1390,6 +1445,34 @@ void runCalibration() {
 }
 
 // ─── Session ───────────────────────────────────────────────────────────────
+
+// v11: applyProfileTimings — compute scaled stage timings for the active profile.
+// Called once at session start after the profile is resolved from the server.
+// Keeps demo/real orthogonal: profile scales whatever base set demoMode selects.
+// Minimum floors prevent the ladder from firing instantly at 0.5x in demo mode.
+void applyProfileTimings() {
+  unsigned long s1 = demoMode ? DEMO_STAGE1_MS : REAL_STAGE1_MS;
+  unsigned long s2 = demoMode ? DEMO_STAGE2_MS : REAL_STAGE2_MS;
+  unsigned long s3 = demoMode ? DEMO_STAGE3_MS : REAL_STAGE3_MS;
+  unsigned long sl = SLEEPING_TRIGGER_MS;   // runtime value from settings
+
+  float scale = 1.0f;
+  if      (activeProfile == PROFILE_MENULIS) scale = 0.5f;
+  else if (activeProfile == PROFILE_MEMBACA) scale = 2.0f;
+  // PROFILE_CAMPURAN: scale = 1.0 (unchanged)
+
+  activeStage1Ms   = max((unsigned long)(s1 * scale), 2000UL);
+  activeStage2Ms   = max((unsigned long)(s2 * scale), 2000UL);
+  activeStage3Ms   = max((unsigned long)(s3 * scale), 2000UL);
+  activeSleepingMs = max((unsigned long)(sl * scale), 5000UL);
+
+  Serial.printf("[v11] Profil: %s — skala %.1fx "
+                "(S1=%lus S2=%lus S3=%lus Tidur=%lus)\n",
+                profileNames[activeProfile], scale,
+                activeStage1Ms/1000, activeStage2Ms/1000,
+                activeStage3Ms/1000, activeSleepingMs/1000);
+}
+
 void startSession(int subjectIndex) {
   sessionActive=true; sessionPaused=false;
   currentSubject=subjectIndex;
@@ -1416,25 +1499,43 @@ void startSession(int subjectIndex) {
   serverSessionId   = -1;
   lastFocusReportMs = 0;  // v9.2: reset focus report timer
 
-  // v9: POST session start to companion server, capture server-side session ID
+  // v11: Reset profile to Campuran default — will be overwritten by server response below
+  activeProfile = PROFILE_CAMPURAN;
+
+  // v9: POST session start to companion server, capture server-side session ID.
+  // v11: Also send the selected topic name; receive and apply profile from response.
   if (companionReady) {
-    StaticJsonDocument<128> doc;
+    StaticJsonDocument<256> doc;
     doc["device_id"]  = deviceId;
     doc["subject_id"] = currentSubject + 1;  // DB is 1-indexed
     doc["start_ts"]   = (long)(millis() / 1000);
+    doc["topic"]      = activeTopicName;      // v11: "" = Ulangkaji Bebas
     String body; serializeJson(doc, body);
     String resp = postToServerWithResponse("/api/session/start", body);
     if (resp.length() > 0) {
-      StaticJsonDocument<64> rdoc;
+      StaticJsonDocument<96> rdoc;
       if (!deserializeJson(rdoc, resp)) {
         serverSessionId = rdoc["session_id"] | -1;
-        Serial.printf("[v9.1] Server session ID: %d\n", serverSessionId);
+        // v11: parse and apply profile
+        const char* profStr = rdoc["profile"] | "Campuran";
+        if      (strcmp(profStr, "Menulis") == 0) activeProfile = PROFILE_MENULIS;
+        else if (strcmp(profStr, "Membaca") == 0) activeProfile = PROFILE_MEMBACA;
+        else                                       activeProfile = PROFILE_CAMPURAN;
+        Serial.printf("[v11] Server session ID: %d | profil: %s\n",
+                      serverSessionId, profStr);
       }
     }
   }
 
+  // v11: Apply scaled timings for the resolved profile.
+  // Also runs when not in Companion mode — applies Campuran (1.0x) timings so
+  // the active* variables are always valid throughout the session.
+  applyProfileTimings();
+
   buzz_sessionStart();
-  Serial.printf("[SESI] Mula: %s\n",subjects[subjectIndex]);
+  Serial.printf("[SESI] Mula: %s | topik: '%s'\n",
+                subjects[subjectIndex],
+                activeTopicName[0] ? activeTopicName : "Ulangkaji Bebas");
 }
 
 void endSession() {
@@ -1621,7 +1722,7 @@ void renderSessionOverlay() {
     M5.Display.setTextColor(BLACK,COL_WARN);
     M5.Display.setTextSize(2); M5.Display.setCursor(10,10); M5.Display.println("! AMARAN !");
     M5.Display.setTextSize(2); M5.Display.setCursor(4,44);
-    int rem=max(0,(int)((SLEEPING_TRIGGER_MS-(millis()-warningStartTime))/1000));
+    int rem=max(0,(int)((activeSleepingMs-(millis()-warningStartTime))/1000));
     M5.Display.printf("Gerak sekarang!\nTamat dalam: %ds",rem);
     M5.Display.setTextSize(1); M5.Display.setCursor(4,108); M5.Display.print("[A] Saya dah bangun!");
     return;
@@ -1670,8 +1771,16 @@ void renderHome() {
     unsigned long elapsed=getActiveSessionMs();
 
     // Row 1 (y=26): Subject name — dimmed (secondary info)
+    // v11: Profile label shown at right of same row when not Campuran (default)
     M5.Display.setTextColor(COL_DIM,BLACK); M5.Display.setTextSize(2);
     M5.Display.setCursor(4,26); M5.Display.print(subjects[currentSubject]);
+    if (activeProfile != PROFILE_CAMPURAN) {
+      M5.Display.setTextSize(1); M5.Display.setTextColor(COL_DIM,BLACK);
+      const char* pn = profileNames[activeProfile];
+      M5.Display.setCursor(240 - (int)strlen(pn)*6 - 4, 28);
+      M5.Display.print(pn);
+      M5.Display.setTextSize(2);
+    }
 
     // Row 2 (y=44): Elapsed time
     M5.Display.setTextColor(COL_TEXT,BLACK); M5.Display.setTextSize(2);
@@ -1912,6 +2021,7 @@ void renderCurrentScreen() {
   switch(currentScreen) {
     case SCREEN_HOME:          renderHome();          break;
     case SCREEN_START_SESSION: renderStartSession();  break;
+    case SCREEN_SESSION_TOPIC: renderSessionTopic();  break;  // v11
     case SCREEN_REGISTER_TAG:  renderRegisterTag();   break;
     case SCREEN_CALIBRATE:     renderCalibrate();     break;
     case SCREEN_SETTINGS:      renderSettings();      break;
@@ -1962,6 +2072,10 @@ void handleBtnA() {
       break;
     case SCREEN_START_SESSION:
       subjectSelectIdx=(subjectSelectIdx+1)%(NUM_SUBJECTS+1); break;
+    case SCREEN_SESSION_TOPIC:  // v11: cycle through session topics
+      if (sessionTopicCount > 0)
+        sessionTopicIdx=(sessionTopicIdx+1)%sessionTopicCount;
+      break;
     case SCREEN_REGISTER_TAG:
       registerSelectIdx=(registerSelectIdx+1)%(NUM_SUBJECTS+2); break;
     case SCREEN_CALIBRATE:
@@ -2165,6 +2279,23 @@ void handleBtnB() {
       if (subjectSelectIdx==NUM_SUBJECTS) {
         currentScreen=SCREEN_HOME;
       } else if (!sessionActive) {
+        // v11: after subject confirmed, show topic picker before starting session
+        sessionTopicIdx = 0;
+        fetchSessionTopics(subjectSelectIdx + 1);  // GET /api/quiz/topics?subject_id=X&device_id=Y
+        currentScreen = SCREEN_SESSION_TOPIC;
+      }
+      break;
+
+    // v11: Session topic picker — BtnB confirms topic and starts session
+    case SCREEN_SESSION_TOPIC:
+      if (sessionTopicCount > 0) {
+        // Store selected topic name (empty string if "Ulangkaji Bebas")
+        const char* sel = sessionTopicNames[sessionTopicIdx];
+        if (strcmp(sel, "Ulangkaji Bebas") == 0) {
+          activeTopicName[0] = '\0';  // empty = free study
+        } else {
+          strlcpy(activeTopicName, sel, MAX_TOPIC_LEN);
+        }
         startSession(subjectSelectIdx);
         currentScreen=SCREEN_HOME; homeMenuIdx=0;
       }
@@ -2953,7 +3084,8 @@ void initCompanionWiFi() {
 
 // fetchQuizTopics — GET /api/quiz/topics?subject_id=X
 // Populates quizTopics[] and sets quizTopicCount.
-// Called after subject is confirmed. If server returns no topics, quizTopicCount=0.
+// v11: server now returns [{topic, profile}] objects — extract topic string only
+// (Quiz Mode doesn't use profiles). Called after subject is confirmed in Mod Kuiz.
 void fetchQuizTopics(int subjectId) {
   quizTopicCount = 0;
   if (!companionReady) return;
@@ -2977,20 +3109,77 @@ void fetchQuizTopics(int subjectId) {
   String body = http.getString();
   http.end();
 
-  // Parse response: {"topics": ["Topik A", "Topik B", ...]}
-  StaticJsonDocument<1024> doc;
+  // v11: parse response: {"topics": [{"topic": "...", "profile": "..."}, ...]}
+  StaticJsonDocument<1536> doc;
   if (deserializeJson(doc, body)) {
     Serial.println("[QUIZ] fetchQuizTopics: JSON parse gagal");
     return;
   }
 
   JsonArray arr = doc["topics"].as<JsonArray>();
-  for (JsonVariant t : arr) {
+  for (JsonObject t : arr) {
     if (quizTopicCount >= MAX_QUIZ_TOPICS) break;
-    strlcpy(quizTopics[quizTopicCount], t | "", MAX_TOPIC_LEN);
+    strlcpy(quizTopics[quizTopicCount], t["topic"] | "", MAX_TOPIC_LEN);
     quizTopicCount++;
   }
   Serial.printf("[QUIZ] %d topik dimuatkan (subjek %d)\n", quizTopicCount, subjectId);
+}
+
+// v11: fetchSessionTopics — GET /api/quiz/topics?subject_id=X&device_id=Y
+// Populates sessionTopicNames[] and sessionTopicProfiles[] for the session
+// topic picker (SCREEN_SESSION_TOPIC). Sends device_id so the server returns
+// only this student's planned topics (with profiles) + Ulangkaji Bebas sentinel.
+void fetchSessionTopics(int subjectId) {
+  sessionTopicCount = 0;
+  if (!companionReady) {
+    // Offline fallback: single "Ulangkaji Bebas" option
+    strlcpy(sessionTopicNames[0], "Ulangkaji Bebas", MAX_TOPIC_LEN);
+    strlcpy(sessionTopicProfiles[0], "Campuran", 12);
+    sessionTopicCount = 1;
+    return;
+  }
+
+  HTTPClient http;
+  char url[160];
+  snprintf(url, sizeof(url),
+    "http://%s:%d/api/quiz/topics?subject_id=%d&device_id=%s",
+    COMP_SERVER_IP, COMP_SERVER_PORT, subjectId, deviceId);
+
+  http.begin(url);
+  http.setTimeout(COMP_TIMEOUT_MS);
+  int code = http.GET();
+
+  if (code != 200) {
+    Serial.printf("[v11] fetchSessionTopics gagal: HTTP %d\n", code);
+    http.end();
+    // Offline fallback
+    strlcpy(sessionTopicNames[0], "Ulangkaji Bebas", MAX_TOPIC_LEN);
+    strlcpy(sessionTopicProfiles[0], "Campuran", 12);
+    sessionTopicCount = 1;
+    return;
+  }
+
+  String body = http.getString();
+  http.end();
+
+  // Parse: {"topics": [{"topic": "...", "profile": "..."}, ..., {"topic": "Ulangkaji Bebas", "profile": "Campuran"}]}
+  StaticJsonDocument<2048> doc;
+  if (deserializeJson(doc, body)) {
+    Serial.println("[v11] fetchSessionTopics: JSON parse gagal");
+    strlcpy(sessionTopicNames[0], "Ulangkaji Bebas", MAX_TOPIC_LEN);
+    strlcpy(sessionTopicProfiles[0], "Campuran", 12);
+    sessionTopicCount = 1;
+    return;
+  }
+
+  JsonArray arr = doc["topics"].as<JsonArray>();
+  for (JsonObject t : arr) {
+    if (sessionTopicCount >= MAX_SESSION_TOPICS) break;
+    strlcpy(sessionTopicNames[sessionTopicCount], t["topic"] | "Ulangkaji Bebas", MAX_TOPIC_LEN);
+    strlcpy(sessionTopicProfiles[sessionTopicCount], t["profile"] | "Campuran", 12);
+    sessionTopicCount++;
+  }
+  Serial.printf("[v11] %d topik sesi dimuatkan (subjek %d)\n", sessionTopicCount, subjectId);
 }
 
 // fetchQuizQuestions — GET /api/quiz/questions?subject_id=X&topic=Y&session_id=Z
@@ -3108,18 +3297,76 @@ void renderQuizTopic() {
   } else {
     int vis0 = scrollStart(quizTopicIdx, quizTopicCount);
     drawScrollBar(quizTopicIdx, quizTopicCount);
+    // textSize(1) — same fix as renderSessionTopic; topic names can be long
+    M5.Display.setTextSize(1);
     for (int i=vis0; i<vis0+VISIBLE_ITEMS && i<quizTopicCount; i++) {
-      int rowY = CONTENT_Y + (i-vis0)*ROW_H;
-      bool sel = (i==quizTopicIdx);
+      int  rowY = CONTENT_Y + (i-vis0)*ROW_H;
+      bool sel  = (i==quizTopicIdx);
       if (sel) M5.Display.fillRect(0,rowY-1,232,ROW_H,COL_INFO);
-      M5.Display.setCursor(4,rowY); M5.Display.setTextSize(2);
       M5.Display.setTextColor(sel?BLACK:COL_TEXT, sel?COL_INFO:BLACK);
-      char trunc[17]; strlcpy(trunc, quizTopics[i], 17);
-      M5.Display.print(trunc);
+      if (sel) {
+        // Selected: word-wrap up to 2 lines within ROW_H (9px × 2 = 18px)
+        printWrapped(quizTopics[i], 4, rowY+1, 36, 2, 9);
+      } else {
+        // Unselected: single line vertically centred, up to 36 chars
+        char trunc[37]; strlcpy(trunc, quizTopics[i], 37);
+        M5.Display.setCursor(4, rowY+5);
+        M5.Display.print(trunc);
+      }
     }
+    M5.Display.setTextSize(2);  // restore
   }
   M5.Display.setTextColor(COL_TEXT,BLACK);
   drawFooter("[A] Kitar","[B] Pilih");
+}
+
+// v11: renderSessionTopic — topic picker for session start (SCREEN_SESSION_TOPIC).
+// Shows this student's planned topics for the chosen subject + "Ulangkaji Bebas"
+// sentinel at the bottom. The selected item also shows its profile in COL_DIM
+// so the student sees what sensing mode they're about to use.
+void renderSessionTopic() {
+  char hdr[28]; snprintf(hdr,28,"Topik — %s",subjects[subjectSelectIdx]);
+  clearDisplay(); drawHeader(hdr);
+
+  if (sessionTopicCount == 0) {
+    M5.Display.setTextColor(COL_WARN,BLACK); M5.Display.setTextSize(2);
+    M5.Display.setCursor(4,CONTENT_Y+10);
+    M5.Display.println("Tiada topik");
+    M5.Display.setTextSize(1); M5.Display.setTextColor(COL_DIM,BLACK);
+    M5.Display.setCursor(4,CONTENT_Y+34);
+    M5.Display.println("Tambah topik dalam");
+    M5.Display.println("perancangan dahulu.");
+    M5.Display.setTextColor(COL_TEXT,BLACK);
+  } else {
+    int vis0 = scrollStart(sessionTopicIdx, sessionTopicCount);
+    drawScrollBar(sessionTopicIdx, sessionTopicCount);
+    // textSize(1) throughout — topic names can be long; 36 chars × 6px = 216px
+    // fits the display and avoids the old 14-char hard cutoff.
+    M5.Display.setTextSize(1);
+    for (int i=vis0; i<vis0+VISIBLE_ITEMS && i<sessionTopicCount; i++) {
+      int  rowY = CONTENT_Y + (i-vis0)*ROW_H;
+      bool sel  = (i==sessionTopicIdx);
+      if (sel) M5.Display.fillRect(0,rowY-1,232,ROW_H,COL_INFO);
+      M5.Display.setTextColor(sel?BLACK:COL_TEXT, sel?COL_INFO:BLACK);
+      if (sel) {
+        // Selected: word-wrap up to 2 lines (9px × 2 = 18px = ROW_H exactly)
+        printWrapped(sessionTopicNames[i], 4, rowY+1, 36, 2, 9);
+        // Profile label at bottom-right — right-aligned so it clears line-2 text
+        const char* pn = sessionTopicProfiles[i];
+        M5.Display.setTextColor(COL_ACCENT, COL_INFO);
+        M5.Display.setCursor(232 - (int)strlen(pn)*6, rowY+9);
+        M5.Display.print(pn);
+      } else {
+        // Unselected: single line vertically centred in ROW_H, up to 36 chars
+        char trunc[37]; strlcpy(trunc, sessionTopicNames[i], 37);
+        M5.Display.setCursor(4, rowY+5);
+        M5.Display.print(trunc);
+      }
+    }
+    M5.Display.setTextSize(2);  // restore
+  }
+  M5.Display.setTextColor(COL_TEXT,BLACK);
+  drawFooter("[A] Kitar","[B] Mula Sesi");
 }
 
 // renderQuizQuestion — question + options screen

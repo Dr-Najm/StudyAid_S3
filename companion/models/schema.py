@@ -79,6 +79,9 @@ class TopicDeadline(db.Model):
     deadline = db.Column(db.Date, nullable=False)
     # status values: "pending", "in_progress", "done"
     status = db.Column(db.String(20), nullable=False, default="pending")
+    # v11: AI-classified study profile — "Menulis", "Membaca", or "Campuran"
+    # Set synchronously when topic is saved; teacher-overridable via planner UI.
+    profile = db.Column(db.String(20), nullable=False, default="Campuran")
 
 
 # ----------------------------------------------------------------------------

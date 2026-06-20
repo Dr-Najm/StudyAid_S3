@@ -97,6 +97,62 @@ Required JSON format:
     return questions
 
 
+# ── Helper: classify topic into a study profile (v11) ──────────────────────
+def _classify_topic_profile(subject_name_bm, topic):
+    """
+    Call Gemini to classify a (subject, topic) pair into one of three study
+    profiles: "Menulis", "Membaca", or "Campuran".
+
+    Returns one of those three strings. On any API failure or unrecognised
+    response, returns "Campuran" (safe default — same as current v10 behaviour).
+
+    Kept strict and small by design: the prompt accepts ONLY a single word.
+    Any value outside the three legal labels is coerced to "Campuran" rather
+    than raising so that topic save is never blocked by a Gemini error.
+    """
+    import google.generativeai as genai
+
+    if not config.GEMINI_API_KEY or config.GEMINI_API_KEY == "YOUR_GEMINI_API_KEY_HERE":
+        print("[Gemini] Kunci API tidak ditetapkan — profil Campuran digunakan.")
+        return "Campuran"
+
+    try:
+        genai.configure(api_key=config.GEMINI_API_KEY)
+        model = genai.GenerativeModel(config.GEMINI_MODEL)
+
+        prompt = f"""You are a study behaviour classifier for Malaysian SPM students.
+
+Classify the following subject and topic into exactly ONE of these three study profiles:
+
+- Menulis  : topic primarily involving active writing, solving problems, or exercises
+             (e.g. Matematik problem sets, essay drafting, Fizik calculations)
+- Membaca  : topic primarily involving reading, memorising, or reviewing content
+             while holding a book or notes (e.g. Sejarah revision, Pendidikan Islam
+             memorisation, Geografi recall)
+- Campuran : topic involving a roughly equal mix of reading and writing, or does not
+             clearly fit either profile
+
+Subject: {subject_name_bm}
+Topic: {topic}
+
+Reply with ONLY one word — Menulis, Membaca, or Campuran. No punctuation, no explanation."""
+
+        response = model.generate_content(prompt)
+        raw = response.text.strip().strip(".")
+
+        if raw in ("Menulis", "Membaca", "Campuran"):
+            print(f"[Gemini] Profil untuk '{subject_name_bm} / {topic}': {raw}")
+            return raw
+
+        # Coerce unrecognised response (e.g. mixed-case, extra words)
+        print(f"[Gemini] Respons profil tidak dikenali: '{raw}' — Campuran digunakan.")
+        return "Campuran"
+
+    except Exception as e:
+        print(f"[Gemini] Ralat klasifikasi profil: {e} — Campuran digunakan.")
+        return "Campuran"
+
+
 # ── Helper: seed demo bank (offline fallback) ───────────────────────────────
 def _seed_demo_bank():
     """

@@ -6,6 +6,7 @@ Week 7: quiz accuracy per subject, deadline countdown, subject balance warning.
 Week 8: student switcher via ?student_id=X query parameter.
 """
 
+import json
 from datetime import date, datetime, timedelta
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 from models.schema import (db, Student, Subject, WeeklySlot, TopicDeadline,
@@ -277,7 +278,8 @@ def plan():
         .filter(TopicDeadline.student_id==student.id)
         .order_by(TopicDeadline.deadline).all())
     deadlines = [{"id":d.id,"subject_name":name,"topic":d.topic,
-                   "deadline":d.deadline.strftime("%d/%m/%Y"),"status":d.status}
+                   "deadline":d.deadline.strftime("%d/%m/%Y"),"status":d.status,
+                   "profile":d.profile}
                  for d,name in raw_deadlines]
 
     return render_template("student/plan.html",
@@ -323,14 +325,61 @@ def slot_delete(slot_id):
 def deadline_add():
     student = _get_student_from_form()
     try:
+        subject_id = int(request.form["subject_id"])
+        topic      = request.form["topic"].strip()
+        subject    = db.session.get(Subject, subject_id)
+
+        # v11: classify profile BEFORE saving so the row is written with the
+        # correct value in a single commit. If Gemini fails, _classify_topic_profile
+        # returns "Campuran" (safe default) and the topic is still saved.
+        profile = "Campuran"
+        if subject:
+            from routes.admin import _classify_topic_profile
+            profile = _classify_topic_profile(subject.name_bm, topic)
+
         db.session.add(TopicDeadline(
-            student_id=student.id,
-            subject_id=int(request.form["subject_id"]),
-            topic=request.form["topic"].strip(),
-            deadline=date.fromisoformat(request.form["deadline"]),
-            status="pending"))
+            student_id = student.id,
+            subject_id = subject_id,
+            topic      = topic,
+            deadline   = date.fromisoformat(request.form["deadline"]),
+            status     = "pending",
+            profile    = profile,
+        ))
         db.session.commit()
-        flash("Sasaran berjaya ditambah.", "ok")
+
+        # v11: generate quiz bank synchronously in a separate try/except so
+        # the topic save above is never rolled back if Gemini quiz-gen fails.
+        quiz_msg = ""
+        if subject:
+            from routes.admin import _generate_questions_gemini
+            try:
+                raw_questions = _generate_questions_gemini(
+                    subject.name_bm, subject.name_en, subject.default_lang, topic
+                )
+                bank = QuizBank(
+                    subject_id   = subject_id,
+                    topic        = topic,
+                    generated_at = datetime.utcnow(),
+                    source       = "gemini",
+                )
+                db.session.add(bank)
+                db.session.flush()
+                for q in raw_questions:
+                    db.session.add(QuizQuestion(
+                        bank_id       = bank.id,
+                        question_text = q["question_text"],
+                        options_json  = json.dumps(q["options"], ensure_ascii=False),
+                        correct_index = q["correct_index"],
+                        language      = q.get("language", subject.default_lang),
+                        difficulty    = q.get("difficulty", 1),
+                    ))
+                db.session.commit()
+                quiz_msg = f" {len(raw_questions)} soalan dijana."
+            except RuntimeError as e:
+                db.session.rollback()
+                quiz_msg = " (Jana soalan gagal — gunakan halaman Admin untuk jana secara manual.)"
+
+        flash(f"Sasaran ditambah. Profil: {profile}.{quiz_msg}", "ok")
     except Exception as e:
         db.session.rollback()
         flash(f"Ralat: {e}", "err")
@@ -355,6 +404,31 @@ def deadline_delete(deadline_id):
         db.session.delete(d)
         db.session.commit()
         flash("Sasaran dipadam.", "ok")
+    return redirect(url_for("student.plan", student_id=student.id))
+
+
+@student_bp.route("/plan/topic/profile", methods=["POST"])
+def deadline_profile_override():
+    """
+    v11: Teacher override for AI-classified study profile.
+    Accepts deadline_id + profile from the planner topic table.
+    This is the explainability anchor: the AI classification is visible and
+    correctable by the teacher in one click.
+    """
+    student    = _get_student_from_form()
+    deadline_id = request.form.get("deadline_id", type=int)
+    new_profile = request.form.get("profile", "").strip()
+
+    _VALID_PROFILES = {"Menulis", "Membaca", "Campuran"}
+    if new_profile not in _VALID_PROFILES:
+        flash("Profil tidak sah.", "err")
+        return redirect(url_for("student.plan", student_id=student.id))
+
+    d = db.session.get(TopicDeadline, deadline_id)
+    if d:
+        d.profile = new_profile
+        db.session.commit()
+        flash(f"Profil '{d.topic}' dikemaskini kepada {new_profile}.", "ok")
     return redirect(url_for("student.plan", student_id=student.id))
 
 

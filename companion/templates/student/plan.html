@@ -128,14 +128,47 @@
     <table style="margin-top:1.2em">
       <thead>
         <tr>
-          <th>Subjek</th><th>Topik</th><th>Tarikh Akhir</th><th>Status</th><th></th>
+          <th>Subjek</th><th>Topik</th><th>Profil</th><th>Tarikh Akhir</th><th>Status</th><th></th>
         </tr>
       </thead>
       <tbody>
         {% for d in deadlines %}
+        {% set profile_color = "#E59A0A" if d.profile == "Menulis"
+                          else "#0D7C7C" if d.profile == "Membaca"
+                          else "#9BB5CC" %}
+        {% set profile_icon  = "✏️" if d.profile == "Menulis"
+                          else "📖" if d.profile == "Membaca"
+                          else "📚" %}
         <tr>
           <td>{{ d.subject_name }}</td>
           <td>{{ d.topic }}</td>
+          <td>
+            <!-- Profile badge + teacher override dropdown in one compact cell -->
+            <div style="display:flex;align-items:center;gap:0.4em;flex-wrap:wrap">
+              <span style="display:inline-block;padding:0.2em 0.55em;border-radius:4px;
+                           font-size:0.78em;font-weight:600;white-space:nowrap;
+                           background:{{ profile_color }}22;
+                           color:{{ profile_color }};
+                           border:1px solid {{ profile_color }}55">
+                {{ profile_icon }} {{ d.profile }}
+              </span>
+              <form method="POST" action="/student/plan/topic/profile"
+                    style="display:inline;margin:0">
+                <input type="hidden" name="student_id"  value="{{ student.id }}">
+                <input type="hidden" name="deadline_id" value="{{ d.id }}">
+                <select name="profile" onchange="this.form.submit()"
+                        title="Tukar profil"
+                        style="border:1px solid #B0CACF;border-radius:4px;
+                               padding:0.15em 0.3em;font-size:0.75em;
+                               background:#F0F5F6;color:#0B1D3A;cursor:pointer">
+                  <option value="">✎ tukar</option>
+                  <option value="Menulis"  {% if d.profile=="Menulis"  %}selected{% endif %}>✏️ Menulis</option>
+                  <option value="Membaca"  {% if d.profile=="Membaca"  %}selected{% endif %}>📖 Membaca</option>
+                  <option value="Campuran" {% if d.profile=="Campuran" %}selected{% endif %}>📚 Campuran</option>
+                </select>
+              </form>
+            </div>
+          </td>
           <td>{{ d.deadline }}</td>
           <td>
             <form method="POST" action="/student/plan/deadline/status/{{ d.id }}" style="display:inline">

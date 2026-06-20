@@ -12,7 +12,8 @@ import random
 from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request
 from models.schema import (db, Student, Subject, Session, WeeklySlot,
-                            DriftEvent, QuizBank, QuizQuestion, QuizAnswer)
+                            DriftEvent, QuizBank, QuizQuestion, QuizAnswer,
+                            TopicDeadline)
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -121,6 +122,8 @@ def session_start():
     device_id  = payload.get("device_id", "")
     subject_id = payload.get("subject_id")
     start_ts   = payload.get("start_ts")
+    # v11: device sends topic name chosen at session start (empty string = free study)
+    topic      = payload.get("topic", "").strip()
 
     student = Student.query.filter_by(device_id=device_id).first()
     if not student:
@@ -138,14 +141,28 @@ def session_start():
     )
     db.session.add(session)
     db.session.commit()
+
+    # v11: look up the pre-computed profile for this topic.
+    # Falls back to "Campuran" if no topic provided or topic not found in
+    # this student's planner (e.g. free-study / Ulangkaji Bebas).
+    profile = "Campuran"
+    if topic:
+        td = TopicDeadline.query.filter_by(
+            student_id=student.id,
+            subject_id=subject_id,
+            topic=topic,
+        ).first()
+        if td:
+            profile = td.profile
+
     _log("session/start",
          f"Sesi ID {session.id} dimulakan untuk {student.name} "
-         f"(subjek {subject_id})")
+         f"(subjek {subject_id}, topik='{topic}', profil={profile})")
 
     # Initialise drift log for this session
     _drift_log[session.id] = []
 
-    return jsonify({"session_id": session.id})
+    return jsonify({"session_id": session.id, "profile": profile})
 
 
 # ── Drift event ──────────────────────────────────────────────────────────────
@@ -269,24 +286,56 @@ def session_answer():
 @api_bp.route("/quiz/topics", methods=["GET"])
 def quiz_topics():
     """
-    Return distinct topic names available for a subject.
-    Called by device after subject is selected in Quiz Mode so the student
-    can pick a specific topic before questions are fetched.
+    Return topics available for a subject, for display on the device topic picker.
+
+    v11 behaviour: if device_id is provided, returns this student's planned topics
+    from TopicDeadline (which carry a pre-computed profile). Always appends a
+    "Ulangkaji Bebas" sentinel as the last item so the device always offers a
+    free-study fallback with no specific topic.
+
+    If no device_id is provided, falls back to QuizBank topics (all banks for the
+    subject) — preserves backward compatibility for contexts where device_id is
+    not available.
+
     Query params:
         subject_id : int (required)
-    Response: {"topics": ["Topik A", "Topik B", ...]}
-              {"topics": []} if no banks exist for this subject
+        device_id  : str (optional — if given, filters to this student's planned topics)
+    Response:
+        {"topics": [{"topic": "Kemerdekaan Malaysia", "profile": "Membaca"}, ...,
+                    {"topic": "Ulangkaji Bebas", "profile": "Campuran"}]}
     """
     subject_id = request.args.get("subject_id", type=int)
+    device_id  = request.args.get("device_id",  type=str)
+
     if subject_id is None:
         return jsonify({"error": "subject_id required"}), 400
 
-    banks = QuizBank.query.filter_by(subject_id=subject_id)\
-        .order_by(QuizBank.topic).all()
-    topics = [b.topic for b in banks]
+    topics = []
+
+    if device_id:
+        # v11: return this student's planned topics with their classified profiles
+        student = Student.query.filter_by(device_id=device_id).first()
+        if student:
+            planned = (TopicDeadline.query
+                .filter_by(student_id=student.id, subject_id=subject_id)
+                .order_by(TopicDeadline.topic)
+                .all())
+            topics = [{"topic": td.topic, "profile": td.profile} for td in planned]
+        # else: student not found — topics stays [], sentinel still appended below
+
+    if not topics:
+        # Fallback: all QuizBank topics for this subject (no profile info available
+        # at this level — Campuran is the safe default)
+        banks  = QuizBank.query.filter_by(subject_id=subject_id)\
+            .order_by(QuizBank.topic).all()
+        topics = [{"topic": b.topic, "profile": "Campuran"} for b in banks]
+
+    # Always append the free-study sentinel so the device always has a fallback
+    topics.append({"topic": "Ulangkaji Bebas", "profile": "Campuran"})
 
     _log("quiz/topics",
-         f"Subjek {subject_id}: {len(topics)} topik dijumpai")
+         f"Subjek {subject_id} device '{device_id}': {len(topics)} topik "
+         f"(termasuk Ulangkaji Bebas)")
     return jsonify({"topics": topics})
 
 

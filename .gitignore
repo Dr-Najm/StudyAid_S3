@@ -1,0 +1,6 @@
+# StudyAid companion app
+companion/venv/
+companion/__pycache__/
+companion/**/__pycache__/
+companion/*.db
+companion/config.ini
