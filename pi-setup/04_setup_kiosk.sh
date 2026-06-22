@@ -6,78 +6,65 @@
 #   ./pi-setup/04_setup_kiosk.sh
 #
 # What this does:
-#   - Disables screen blanking and screensaver (so the live dashboard
-#     stays visible throughout the demo without any mouse movement)
-#   - Creates an autostart entry that launches Chromium in kiosk mode
-#     pointing at the live session monitor (/student/live) on boot
+#   - Adds a Chromium kiosk launch to the labwc autostart so it opens
+#     full-screen on the live session monitor (/student/live) at boot.
 #
-# Kiosk mode: full-screen, no address bar, no restore-session prompt,
-# no notifications. The dashboard fills the entire monitor.
+# IMPORTANT — Pi 5 / Bookworm desktop notes:
+#   * The default desktop compositor is WAYLAND. On current Bookworm Pi 5
+#     images the compositor is **labwc**, which reads its autostart from
+#     ~/.config/labwc/autostart  — NOT the freedesktop ~/.config/autostart/
+#     folder (that folder is silently ignored, so .desktop kiosk entries
+#     there never fire). This script targets labwc autostart.
+#     (If your image uses Wayfire instead, the file is ~/.config/wayfire.ini
+#     under an [autostart] section — adjust accordingly.)
+#   * Screen blanking must NOT be disabled with `xset` (X11-only; it errors
+#     on Wayland and can wedge the session). Use raspi-config instead:
+#         sudo raspi-config -> Display Options -> Screen Blanking -> No
+#   * The Chromium command on Bookworm is `chromium`, NOT `chromium-browser`.
 #
-# Assumes the Pi desktop (LXDE/Wayfire on Bookworm) auto-logs in.
-# Enable auto-login first via: sudo raspi-config → System → Auto Login
+# Assumes the Pi desktop auto-logs in.
+# Enable auto-login first via: sudo raspi-config -> System Options -> Auto Login
 
 set -e
 
 PI_USER="$(whoami)"
-AUTOSTART_DIR="/home/$PI_USER/.config/autostart"
+LABWC_DIR="/home/$PI_USER/.config/labwc"
+AUTOSTART_FILE="$LABWC_DIR/autostart"
 KIOSK_URL="http://localhost:5000/student/live"
 
-echo "[1/3] Disabling screen blanking..."
+# The kiosk launch line. ( ... ) & runs it in the background so the 15s sleep
+# does not block the rest of the labwc autostart. 15s lets the session + Flask
+# finish coming up first. 'chromium' is the Bookworm command name.
+KIOSK_LINE="(sleep 15 && chromium --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-restore-session-state --no-first-run --check-for-update-interval=31536000 $KIOSK_URL) &"
 
-# For X11 (most Bookworm desktop installs default to X11 on Pi 5)
-XINITRC="/home/$PI_USER/.xinitrc"
-XSESSION="/home/$PI_USER/.xsessionrc"
+echo "[1/2] Ensuring labwc autostart exists..."
+mkdir -p "$LABWC_DIR"
+touch "$AUTOSTART_FILE"
 
-# Write a screen-blanking disable script sourced at session start
-tee /home/$PI_USER/.config/studyaid-screensaver-off.sh > /dev/null <<'EOF'
-#!/bin/bash
-xset s off          # disable screensaver
-xset s noblank      # disable screen blanking
-xset -dpms          # disable DPMS (Energy Star) power saving
-EOF
-chmod +x /home/$PI_USER/.config/studyaid-screensaver-off.sh
+echo "[2/2] Adding kiosk launch to $AUTOSTART_FILE ..."
+# Avoid duplicate entries if the script is run more than once
+if grep -q "studyaid kiosk" "$AUTOSTART_FILE" 2>/dev/null || grep -q "student/live" "$AUTOSTART_FILE" 2>/dev/null; then
+    echo "  Kiosk launch already present — skipping (edit $AUTOSTART_FILE to change)."
+else
+    {
+        echo "# studyaid kiosk — launch Chromium full-screen on the live dashboard"
+        echo "$KIOSK_LINE"
+    } >> "$AUTOSTART_FILE"
+    echo "  Added."
+fi
 
-echo "[2/3] Creating Chromium kiosk autostart entry..."
-mkdir -p "$AUTOSTART_DIR"
-
-tee "$AUTOSTART_DIR/studyaid-screensaver-off.desktop" > /dev/null <<EOF
-[Desktop Entry]
-Type=Application
-Name=StudyAid Disable Screensaver
-Exec=/home/$PI_USER/.config/studyaid-screensaver-off.sh
-Hidden=false
-X-LXDE-Autostart-Phase=Applications
-EOF
-
-tee "$AUTOSTART_DIR/studyaid-kiosk.desktop" > /dev/null <<EOF
-[Desktop Entry]
-Type=Application
-Name=StudyAid Kiosk
-# Wait 5 seconds for Flask to finish starting before opening the browser
-Exec=bash -c "sleep 5 && chromium \\
-    --kiosk \\
-    --noerrdialogs \\
-    --disable-infobars \\
-    --disable-session-crashed-bubble \\
-    --disable-restore-session-state \\
-    --no-first-run \\
-    --check-for-update-interval=31536000 \\
-    '$KIOSK_URL'"
-Hidden=false
-X-LXDE-Autostart-Phase=Applications
-EOF
-
-echo "[3/3] Done."
 echo ""
-echo "Kiosk configured for user: $PI_USER"
+echo "Done. Kiosk configured for user: $PI_USER"
 echo "URL: $KIOSK_URL"
 echo ""
 echo "NEXT STEPS:"
-echo "  1. Make sure auto-login is enabled:"
-echo "     sudo raspi-config → System Options → Boot / Auto Login → Desktop Autologin"
-echo "  2. Reboot: sudo reboot"
-echo "  3. Chromium should open automatically ~5s after desktop appears"
+echo "  1. Enable auto-login (if not already):"
+echo "     sudo raspi-config -> System Options -> Boot / Auto Login -> Desktop Autologin"
+echo "  2. Disable screen blanking (Wayland-safe, NOT xset):"
+echo "     sudo raspi-config -> Display Options -> Screen Blanking -> No"
+echo "  3. Reboot: sudo reboot"
+echo "  4. Chromium should open full-screen ~15s after the desktop appears."
 echo ""
-echo "To exit kiosk during testing: press Alt+F4 (closes Chromium)"
-echo "To disable kiosk: rm $AUTOSTART_DIR/studyaid-kiosk.desktop"
+echo "To exit the kiosk: SSH in from another machine and run 'pkill chromium',"
+echo "or power-cycle (no reliable Wayland keyboard shortcut)."
+echo "To disable kiosk: remove the studyaid kiosk lines from $AUTOSTART_FILE"
