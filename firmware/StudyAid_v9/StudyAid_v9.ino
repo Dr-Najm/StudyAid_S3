@@ -1,5 +1,5 @@
 /*
- * StudyAid Firmware v11.0
+ * StudyAid Firmware v12.0
  * Hardware: M5StickS3 + M5 Unit NFC (ST25R3916, I2C via Grove Port A)
  *
  * Button mapping:
@@ -11,7 +11,7 @@
  *   (SDA/SCL assigned automatically via M5.getPin)
  *
  * WiFi (Solo mode)     : AP  SSID=StudyAid  Password=studyaid123  IP=192.168.4.1
- * WiFi (Companion mode): STA SSID=StudyAid-Laptop  connects to laptop hotspot
+ * WiFi (Companion mode): STA SSID=studyaid-pi  connects to Raspberry Pi AP
  *
  * Libraries required:
  *   - M5Unified          (replaces M5StickCPlus2.h)
@@ -54,6 +54,11 @@
  *           Sains, Pendidikan Moral
  *           Quiz Mode: topic picker screen added between subject and question
  *           New API call: GET /api/quiz/topics?subject_id=X
+ *   v12.0 - Raspberry Pi migration: companion server moves from Windows laptop to
+ *           Raspberry Pi 5. WiFi constants updated to Pi AP (studyaid-pi / 192.168.4.1).
+ *           Focus formula fix: removed sleepingCount*8 penalty — only Stage 3 warning
+ *           penalises (-3), matching the documented behaviour since v10. Session summary
+ *           breakdown updated: T:- column dropped, now shows A:-  P:+  B:+ only.
  *   v11.0 - Activity-aware sensing via three study profiles (Menulis/Membaca/Campuran).
  *           Profiles are AI-classified at planning time (server-side) and fetched at
  *           session start. Each profile scales the warning-ladder timings (0.5x/1.0x/2.0x)
@@ -161,12 +166,12 @@
 
 // ─── v9: Companion mode WiFi + server defaults ─────────────────────────────
 // These are the defaults baked into the firmware.
-// COMP_SSID / COMP_PASS : Windows Mobile Hotspot credentials
-// COMP_SERVER_IP        : Windows hotspot host IP (almost always 192.168.137.1)
+// COMP_SSID / COMP_PASS : Raspberry Pi AP credentials (v12: Pi replaces Windows hotspot)
+// COMP_SERVER_IP        : Pi fixed AP IP (192.168.4.1 — NetworkManager default range)
 // COMP_SERVER_PORT      : Flask companion app port
-#define COMP_SSID       "StudyAid-Laptop"
+#define COMP_SSID       "studyaid-pi"
 #define COMP_PASS       "studyaid123"
-#define COMP_SERVER_IP  "192.168.137.1"
+#define COMP_SERVER_IP  "192.168.4.1"
 #define COMP_SERVER_PORT 5000
 #define COMP_TIMEOUT_MS  3000   // HTTP request timeout — fail fast, don't block loop
 
@@ -866,7 +871,7 @@ void recalcFocusScore() {
   if (!sessionActive) return;
   durationBonus=min((int)(getActiveSessionMs()/600000),20);
   streakBonus=streakBonusEarned*5;
-  focusScore=constrain(100-(warningCount*3)-(sleepingCount*8)
+  focusScore=constrain(100-(warningCount*3)
     +recoveryBonus+streakBonus+durationBonus,0,120);
 }
 
@@ -1609,7 +1614,7 @@ void endSession() {
   M5.Display.printf("Fokus: %d",focusScore);
   M5.Display.setTextColor(COL_DIM,BLACK); M5.Display.setTextSize(1);
   M5.Display.setCursor(4,90);
-  M5.Display.printf("A:-%d T:-%d P:+%d B:+%d\n",warningCount*3,sleepingCount*8,recoveryBonus,durationBonus);
+  M5.Display.printf("A:-%d P:+%d B:+%d\n",warningCount*3,recoveryBonus,durationBonus);
   M5.Display.printf("Rehat: %dx %s\n",restBreakCount,formatTime(totalRestMs).c_str());
   delay(4000);
 
@@ -2775,8 +2780,8 @@ async function fetchLive(){
     const pct=Math.round((d.streakPct||0)*100);
     document.getElementById('streakLabel').textContent=pct+'% ke +5 seterusnya';
     document.getElementById('streakFill').style.width=pct+'%';
-    const total=120,base=Math.max(0,100-d.warningCount*3-d.sleepingCount*8);
-    const wW=Math.min(d.warningCount*3,50),sW=Math.min(d.sleepingCount*8,50);
+    const total=120,base=Math.max(0,100-d.warningCount*3);
+    const wW=Math.min(d.warningCount*3,50);
     const rW=d.recoveryBonus,stW=d.streakBonus,dW=d.durationBonus;
     document.getElementById('scoreBar').innerHTML=`
       <div class="bar-base" style="width:${base/total*100}%">${base>10?'Asas':''}</div>

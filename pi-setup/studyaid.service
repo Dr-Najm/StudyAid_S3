@@ -1,0 +1,27 @@
+[Unit]
+Description=StudyAid Companion App (Flask)
+# Start after the network is up — ensures the AP interface is ready
+# before Flask binds to 0.0.0.0
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Change User to your actual Pi username if different from 'pi'
+User=pi
+WorkingDirectory=/home/pi/StudyAid_S3/companion
+
+# Activate the venv and run the app.
+# The venv must be created first — see 02_setup_flask.sh.
+ExecStart=/home/pi/StudyAid_S3/companion/venv/bin/python app.py
+
+# Restart automatically if Flask crashes
+Restart=on-failure
+RestartSec=5
+
+# Write logs to the journal (view with: journalctl -u studyaid -f)
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
