@@ -55,7 +55,7 @@ tee "$AUTOSTART_DIR/studyaid-kiosk.desktop" > /dev/null <<EOF
 Type=Application
 Name=StudyAid Kiosk
 # Wait 5 seconds for Flask to finish starting before opening the browser
-Exec=bash -c "sleep 5 && chromium-browser \\
+Exec=bash -c "sleep 5 && chromium \\
     --kiosk \\
     --noerrdialogs \\
     --disable-infobars \\

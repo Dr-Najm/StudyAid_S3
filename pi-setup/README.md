@@ -157,7 +157,7 @@ The ESP32 firmware (v12.0) is already compiled with:
 **Kiosk doesn't open / shows old URL**
 - Check autostart files exist: `ls ~/.config/autostart/`
 - Run Chromium manually to see error:
-  `chromium-browser --kiosk http://localhost:5000/student/live`
+  `chromium --kiosk http://localhost:5000/student/live`
 - Confirm Flask is running first: `curl http://localhost:5000/student/live`
 
 **Live monitor stuck on "Tiada Sesi Aktif" during demo**
