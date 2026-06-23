@@ -5,6 +5,7 @@ Week 8: multi-class teacher view (stub for now).
 """
 
 import json
+import subprocess
 from datetime import datetime
 from flask import Blueprint, flash, render_template, request, redirect, url_for
 from models.schema import db, Subject, QuizBank, QuizQuestion
