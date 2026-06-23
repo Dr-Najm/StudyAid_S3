@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "note": "Offline quiz bundle for the StudyAid booth. The 'Isi Data Demo' settings button loads quiz banks from this file so no internet (Gemini) call is needed. This starter file covers the topics used in the live demo. To capture your FULL Gemini-generated set for all 16 topics, run: python export_demo_bundle.py (on a machine with a populated studyaid.db), which overwrites this file. Topic strings MUST match seed_demo.py exactly.",
+  "banks": [
+    {
+      "subject_name_bm": "Sejarah",
+      "topic": "Bab 5 — Kemerdekaan dan Pembangunan Negara",
+      "profile": "Membaca",
+      "questions": [
+        {"question_text": "Pada tarikh berapakah Persekutuan Tanah Melayu mencapai kemerdekaan?", "options": ["31 Ogos 1957", "16 September 1963", "31 Ogos 1960", "1 Januari 1958"], "correct_index": 0, "language": "bm", "difficulty": 1},
+        {"question_text": "Siapakah Perdana Menteri pertama Malaysia?", "options": ["Tun Abdul Razak", "Tun Hussein Onn", "Tunku Abdul Rahman", "Tun Dr. Mahathir Mohamad"], "correct_index": 2, "language": "bm", "difficulty": 1},
+        {"question_text": "Apakah nama perjanjian yang membawa kepada kemerdekaan Tanah Melayu?", "options": ["Perjanjian Pangkor", "Perjanjian London", "Perjanjian Persekutuan", "Perjanjian Bangkok"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Malaysia ditubuhkan pada tahun?", "options": ["1957", "1960", "1963", "1965"], "correct_index": 2, "language": "bm", "difficulty": 1},
+        {"question_text": "Siapakah Yang di-Pertuan Agong pertama Malaysia?", "options": ["Sultan Hisamuddin", "Tuanku Abdul Halim", "Tuanku Abdul Rahman", "Sultan Ismail Nasiruddin"], "correct_index": 2, "language": "bm", "difficulty": 2},
+        {"question_text": "Apakah nama parti yang mengetuai kemerdekaan Tanah Melayu?", "options": ["DAP", "MIC", "MCA", "UMNO"], "correct_index": 3, "language": "bm", "difficulty": 1},
+        {"question_text": "Berapakah bilangan negeri yang membentuk Malaysia pada 1963?", "options": ["11", "13", "14", "12"], "correct_index": 2, "language": "bm", "difficulty": 2},
+        {"question_text": "Negara manakah yang keluar dari Malaysia pada tahun 1965?", "options": ["Sarawak", "Sabah", "Singapura", "Brunei"], "correct_index": 2, "language": "bm", "difficulty": 1},
+        {"question_text": "Slogan yang dilaungkan oleh Tunku Abdul Rahman semasa pengisytiharan kemerdekaan ialah?", "options": ["Merdeka!", "Malaysia Boleh!", "Hidup Melayu!", "Daulat Tuanku!"], "correct_index": 0, "language": "bm", "difficulty": 1},
+        {"question_text": "Di manakah pengisytiharan kemerdekaan Tanah Melayu diadakan?", "options": ["Dataran Merdeka", "Stadium Merdeka", "Istana Negara", "Bangunan Sultan Abdul Samad"], "correct_index": 1, "language": "bm", "difficulty": 2}
+      ]
+    },
+    {
+      "subject_name_bm": "Matematik",
+      "topic": "Ungkapan Algebra dan Persamaan Linear",
+      "profile": "Menulis",
+      "questions": [
+        {"question_text": "Permudahkan ungkapan: 3x + 5x - 2x", "options": ["6x", "10x", "4x", "8x"], "correct_index": 0, "language": "bm", "difficulty": 1},
+        {"question_text": "Selesaikan persamaan: 2x + 6 = 14", "options": ["x = 3", "x = 4", "x = 5", "x = 10"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Kembangkan: 2(x + 3)", "options": ["2x + 3", "2x + 6", "x + 6", "2x + 5"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Jika 5x - 3 = 12, maka nilai x ialah?", "options": ["x = 2", "x = 3", "x = 4", "x = 5"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Permudahkan: 4(2x - 1) + 3", "options": ["8x - 1", "8x + 2", "8x - 4", "6x - 1"], "correct_index": 0, "language": "bm", "difficulty": 2},
+        {"question_text": "Selesaikan: x/3 = 7", "options": ["x = 10", "x = 21", "x = 4", "x = 3"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Faktorkan: 6x + 9", "options": ["3(2x + 3)", "6(x + 9)", "3(2x + 9)", "2(3x + 3)"], "correct_index": 0, "language": "bm", "difficulty": 2},
+        {"question_text": "Jika 3(x - 2) = 9, nilai x ialah?", "options": ["x = 3", "x = 5", "x = 4", "x = 6"], "correct_index": 1, "language": "bm", "difficulty": 2}
+      ]
+    },
+    {
+      "subject_name_bm": "Matematik",
+      "topic": "Statistik — Min, Mod dan Median",
+      "profile": "Menulis",
+      "questions": [
+        {"question_text": "Cari min bagi set data: 4, 6, 8, 10, 12", "options": ["8", "7", "9", "10"], "correct_index": 0, "language": "bm", "difficulty": 1},
+        {"question_text": "Apakah mod bagi set data: 2, 3, 3, 5, 7, 3, 8?", "options": ["3", "5", "2", "7"], "correct_index": 0, "language": "bm", "difficulty": 1},
+        {"question_text": "Cari median bagi: 1, 3, 5, 7, 9", "options": ["3", "5", "7", "9"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Median bagi set data 2, 4, 6, 8 ialah?", "options": ["4", "5", "6", "4.5"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Jika min bagi 4 nombor ialah 10, jumlah keempat-empat nombor itu ialah?", "options": ["14", "40", "10", "4"], "correct_index": 1, "language": "bm", "difficulty": 2}
+      ]
+    },
+    {
+      "subject_name_bm": "Sejarah",
+      "topic": "Bab 3 — Nasionalisme di Malaysia",
+      "profile": "Membaca",
+      "questions": [
+        {"question_text": "Apakah maksud nasionalisme?", "options": ["Semangat cintakan bangsa dan negara", "Sistem ekonomi", "Bentuk pemerintahan beraja", "Dasar perdagangan bebas"], "correct_index": 0, "language": "bm", "difficulty": 1},
+        {"question_text": "Akhbar manakah yang penting dalam menyemai semangat nasionalisme Melayu?", "options": ["The Star", "Al-Imam", "New Straits Times", "Berita Harian"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Kesatuan Melayu Muda (KMM) ditubuhkan pada tahun?", "options": ["1938", "1945", "1957", "1963"], "correct_index": 0, "language": "bm", "difficulty": 2},
+        {"question_text": "Faktor utama kebangkitan nasionalisme ialah?", "options": ["Penjajahan kuasa Barat", "Pertanian", "Perdagangan rempah", "Pelancongan"], "correct_index": 0, "language": "bm", "difficulty": 1},
+        {"question_text": "Tokoh nasionalis yang menubuhkan KMM ialah?", "options": ["Ibrahim Yaacob", "Tunku Abdul Rahman", "Tun Tan Cheng Lock", "Onn Jaafar"], "correct_index": 0, "language": "bm", "difficulty": 2}
+      ]
+    }
+  ]
+}

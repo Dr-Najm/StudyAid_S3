@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+{% block title %}Tetapan Booth — StudyAid{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Tetapan Booth</h1>
+  <p class="subtitle">Pengurusan pangkalan data dan sistem Pi — gunakan dari skrin kiosk sahaja</p>
+</div>
+
+{# ── Flash messages ─────────────────────────────────────────────────────── #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for cat, msg in messages %}
+      <div class="flash flash-{{ cat }}">{{ msg }}</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+{# ── DB stats strip ─────────────────────────────────────────────────────── #}
+<div class="stats-strip">
+  <div class="stat-item"><span class="stat-val">{{ stats.students }}</span><span class="stat-lbl">Pelajar</span></div>
+  <div class="stat-item"><span class="stat-val">{{ stats.sessions }}</span><span class="stat-lbl">Sesi</span></div>
+  <div class="stat-item"><span class="stat-val">{{ stats.topics }}</span><span class="stat-lbl">Topik</span></div>
+  <div class="stat-item"><span class="stat-val">{{ stats.banks }}</span><span class="stat-lbl">Bank Kuiz</span></div>
+  <div class="stat-item"><span class="stat-val">{{ stats.questions }}</span><span class="stat-lbl">Soalan</span></div>
+  <div class="stat-item"><span class="stat-val">{{ stats.answers }}</span><span class="stat-lbl">Jawapan</span></div>
+</div>
+
+{# ── AP status banner ───────────────────────────────────────────────────── #}
+<div class="ap-banner ap-{{ ap_status }}">
+  {% if ap_status == "active" %}
+    <span class="ap-dot"></span> AP <b>studyaid-pi</b> aktif — peranti boleh bersambung
+  {% elif ap_status == "inactive" %}
+    <span class="ap-dot"></span> AP <b>studyaid-pi</b> tidak aktif — booth dalam mod internet
+  {% else %}
+    AP status tidak diketahui (bukan Pi, atau nmcli tidak tersedia)
+  {% endif %}
+</div>
+
+{# ═══════════════════════════════════════════════════════════════════════════ #}
+{# Tier 1 — Database                                                          #}
+{# ═══════════════════════════════════════════════════════════════════════════ #}
+<div class="settings-section">
+  <div class="section-header">
+    <span class="section-tag">PANGKALAN DATA</span>
+    <h2>Pengurusan Data</h2>
+    <p>Tindakan ini selamat — tidak menjejaskan sistem operasi Pi.</p>
+  </div>
+
+  <div class="action-grid">
+
+    {# ── Seed demo ──────────────────────────────────────────────────────── #}
+    <div class="action-card">
+      <div class="action-icon">📦</div>
+      <h3>Isi Data Demo</h3>
+      <p>Kosongkan semua data dan isi semula dengan 2 minggu sesi, 16 topik, bank kuiz dan jawapan demo. Menggunakan bundle luar talian — tiada internet diperlukan.</p>
+      <form method="POST" action="/admin/settings/seed_demo"
+            onsubmit="return confirm('Ini akan PADAM semua data sedia ada dan isi data demo baru. Teruskan?')">
+        <button type="submit" class="btn btn-primary">
+          Isi Data Demo
+        </button>
+      </form>
+    </div>
+
+    {# ── Close stale sessions ───────────────────────────────────────────── #}
+    <div class="action-card">
+      <div class="action-icon">🔒</div>
+      <h3>Tutup Sesi Terbuka</h3>
+      <p>Tutup semua sesi yang tiada tarikh tamat. Gunakan ini jika monitor langsung menunjukkan sesi aktif selepas peranti dimatikan.</p>
+      <form method="POST" action="/admin/settings/close_sessions">
+        <button type="submit" class="btn btn-secondary">
+          Tutup Semua Sesi Terbuka
+        </button>
+      </form>
+    </div>
+
+    {# ── Regen quiz banks ───────────────────────────────────────────────── #}
+    <div class="action-card">
+      <div class="action-icon">🤖</div>
+      <h3>Jana Semula Bank Soalan</h3>
+      <p>Jana bank soalan baharu via Gemini AI untuk topik yang belum ada bank. <b>Memerlukan internet.</b> Gagal dengan anggun jika luar talian.</p>
+      <form method="POST" action="/admin/settings/regen_banks">
+        <button type="submit" class="btn btn-secondary">
+          Jana Semula (Perlukan Internet)
+        </button>
+      </form>
+    </div>
+
+    {# ── Clear DB ───────────────────────────────────────────────────────── #}
+    <div class="action-card action-card-danger">
+      <div class="action-icon">🗑️</div>
+      <h3>Kosongkan Pangkalan Data</h3>
+      <p>Padam semua sesi, topik, bank kuiz dan jawapan. Subjek dan pelajar dipulihkan secara automatik. Data demo perlu diisi semula selepas ini.</p>
+      <form method="POST" action="/admin/settings/clear_db"
+            onsubmit="return confirm('AMARAN: Ini akan memadam SEMUA sesi, topik dan bank kuiz. Teruskan?')">
+        <button type="submit" class="btn btn-danger">
+          Kosongkan Pangkalan Data
+        </button>
+      </form>
+    </div>
+
+  </div>
+</div>
+
+{# ═══════════════════════════════════════════════════════════════════════════ #}
+{# Tier 2 — System (localhost only)                                           #}
+{# ═══════════════════════════════════════════════════════════════════════════ #}
+<div class="settings-section">
+  <div class="section-header">
+    <span class="section-tag">SISTEM</span>
+    <h2>Kawalan Pi</h2>
+    <p>Tindakan sistem — <b>mesti dijalankan dari skrin kiosk Pi</b>. Permintaan dari telefon atau laptop lain akan ditolak.</p>
+  </div>
+
+  <div class="action-grid">
+
+    {# ── AP toggle ──────────────────────────────────────────────────────── #}
+    <div class="action-card">
+      <div class="action-icon">📡</div>
+      <h3>Togol AP WiFi</h3>
+      <p>
+        {% if ap_status == "active" %}
+          AP aktif. Matikan untuk membebaskan radio WiFi supaya Pi boleh bersambung ke internet secara manual.
+        {% else %}
+          AP tidak aktif. Hidupkan semula untuk peranti wearable bersambung.
+        {% endif %}
+      </p>
+      <div class="btn-row">
+        {% if ap_status != "active" %}
+        <form method="POST" action="/admin/settings/ap_up">
+          <button type="submit" class="btn btn-primary">▲ Hidupkan AP</button>
+        </form>
+        {% endif %}
+        {% if ap_status != "inactive" %}
+        <form method="POST" action="/admin/settings/ap_down">
+          <button type="submit" class="btn btn-secondary"
+                  onclick="return confirm('Peranti wearable akan terputus. Teruskan?')">
+            ▼ Matikan AP
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+
+    {# ── Exit kiosk ─────────────────────────────────────────────────────── #}
+    <div class="action-card">
+      <div class="action-icon">🖥️</div>
+      <h3>Keluar Mod Kiosk</h3>
+      <p>Tutup Chromium dan kembali ke desktop Pi. Dari desktop, anda boleh sambung ke internet melalui ikon WiFi, kemudian buka <b>localhost:5000</b> untuk demo AI langsung.</p>
+      <form method="POST" action="/admin/settings/exit_kiosk"
+            onsubmit="return confirm('Ini akan menutup paparan kiosk. Teruskan?')">
+        <button type="submit" class="btn btn-secondary">
+          Keluar Mod Kiosk
+        </button>
+      </form>
+    </div>
+
+    {# ── Reboot ─────────────────────────────────────────────────────────── #}
+    <div class="action-card action-card-danger">
+      <div class="action-icon">🔄</div>
+      <h3>Mula Semula Pi</h3>
+      <p>Reboot Pi sepenuhnya. AP, Flask dan kiosk akan naik semula secara automatik dalam ±45 saat. Gunakan ini untuk kembali ke mod booth penuh selepas demo AI.</p>
+      <form method="POST" action="/admin/settings/reboot"
+            onsubmit="return confirm('Pi akan reboot. Semua peranti akan terputus seketika. Teruskan?')">
+        <button type="submit" class="btn btn-danger">
+          Mula Semula Pi
+        </button>
+      </form>
+    </div>
+
+    {# ── Power off ──────────────────────────────────────────────────────── #}
+    <div class="action-card action-card-danger">
+      <div class="action-icon">⏻</div>
+      <h3>Matikan Pi</h3>
+      <p>Matikan Pi sepenuhnya untuk simpanan selamat. Tunggu lampu LED hijau berhenti berkelip sebelum mencabut palam kuasa. Untuk hidupkan semula, cabut dan pasang semula palam.</p>
+      <form method="POST" action="/admin/settings/poweroff"
+            onsubmit="return confirm('Pi akan dimatikan sepenuhnya. Anda perlu cabut/pasang palam untuk hidupkan semula. Teruskan?')">
+        <button type="submit" class="btn btn-danger">
+          Matikan Pi
+        </button>
+      </form>
+    </div>
+
+  </div>
+</div>
+
+{# ── Workflow guide ──────────────────────────────────────────────────────── #}
+<div class="settings-section">
+  <div class="section-header">
+    <span class="section-tag">PANDUAN</span>
+    <h2>Aliran Kerja Demo AI Langsung</h2>
+  </div>
+  <div class="workflow-steps">
+    <div class="workflow-step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <b>Matikan AP</b> — klik "Matikan AP" di atas. Radio WiFi Pi kini bebas.
+      </div>
+    </div>
+    <div class="workflow-step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <b>Keluar kiosk</b> — klik "Keluar Mod Kiosk". Anda kini di desktop Pi.
+      </div>
+    </div>
+    <div class="workflow-step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <b>Sambung ke internet</b> — klik ikon WiFi di penjuru kanan atas desktop, pilih rangkaian.
+      </div>
+    </div>
+    <div class="workflow-step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <b>Buka Chromium</b> → taip <code>localhost:5000/student/plan</code>. Tambah topik baharu — Gemini akan mengelas profil dan jana soalan secara langsung.
+      </div>
+    </div>
+    <div class="workflow-step">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <b>Kembali ke booth</b> — reboot Pi. Dalam ±45 saat, AP naik, kiosk kembali ke <code>/student/live</code>, peranti boleh bersambung semula.
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .page-header { margin-bottom: 1.5rem; }
+  .page-header h1 { font-size: 1.8rem; color: var(--navy); margin: 0 0 .25rem; }
+  .subtitle { color: var(--slate); font-size: .95rem; margin: 0; }
+
+  /* Flash */
+  .flash { padding: .75rem 1rem; border-radius: 8px; margin-bottom: 1rem;
+           font-size: .95rem; font-weight: 500; }
+  .flash-ok   { background: #e8f5e9; color: #2e7d32; border-left: 4px solid #2e7d32; }
+  .flash-warn { background: #fff8e1; color: #f57f17; border-left: 4px solid #f9a825; }
+  .flash-err  { background: #fce4ec; color: #b71c1c; border-left: 4px solid #c62828; }
+
+  /* Stats strip */
+  .stats-strip { display:flex; gap:.75rem; flex-wrap:wrap; margin-bottom:1.25rem; }
+  .stat-item { background:#fff; border:1px solid #e0eaef; border-radius:10px;
+               padding:.6rem 1rem; min-width:90px; text-align:center;
+               box-shadow:0 1px 4px rgba(0,0,0,.06); }
+  .stat-val  { display:block; font-size:1.5rem; font-weight:700; color:var(--teal); }
+  .stat-lbl  { display:block; font-size:.75rem; color:var(--slate); margin-top:.1rem; }
+
+  /* AP banner */
+  .ap-banner { padding:.6rem 1rem; border-radius:8px; margin-bottom:1.5rem;
+               font-size:.9rem; display:flex; align-items:center; gap:.6rem; }
+  .ap-active   { background:#e0f4f4; color:#0a5050; border:1px solid #9BC5C5; }
+  .ap-inactive { background:#fff3e0; color:#7c4500; border:1px solid #ffc107; }
+  .ap-unknown  { background:#f5f5f5; color:#555;   border:1px solid #ccc; }
+  .ap-dot      { width:10px; height:10px; border-radius:50%; display:inline-block;
+                 background: currentColor; animation: pulse 1.5s infinite; }
+  .ap-active .ap-dot   { background:#0D7C7C; }
+  .ap-inactive .ap-dot { background:#f59e0b; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* Sections */
+  .settings-section { margin-bottom:2rem; }
+  .section-header { margin-bottom:1rem; }
+  .section-tag { background:var(--teal); color:#fff; font-size:.72rem; font-weight:700;
+                 padding:.2rem .65rem; border-radius:20px; letter-spacing:.05em; }
+  .section-header h2 { font-size:1.25rem; color:var(--navy); margin:.4rem 0 .2rem; }
+  .section-header p  { color:var(--slate); font-size:.88rem; margin:0; }
+
+  /* Action grid */
+  .action-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
+                 gap:1rem; }
+  .action-card { background:#fff; border:1px solid #e0eaef; border-radius:12px;
+                 padding:1.25rem; display:flex; flex-direction:column; gap:.6rem;
+                 box-shadow:0 1px 5px rgba(0,0,0,.07); }
+  .action-card-danger { border-color:#f5c2c7; background:#fff8f8; }
+  .action-icon { font-size:1.6rem; }
+  .action-card h3 { margin:0; font-size:1rem; color:var(--navy); }
+  .action-card p  { margin:0; font-size:.85rem; color:var(--slate); line-height:1.45; }
+
+  /* Buttons */
+  .btn { border:none; border-radius:8px; padding:.55rem 1.1rem; font-size:.88rem;
+         font-weight:600; cursor:pointer; transition:opacity .15s; }
+  .btn:hover { opacity:.85; }
+  .btn-primary   { background:var(--teal);    color:#fff; }
+  .btn-secondary { background:#e8f0f5;        color:var(--navy); }
+  .btn-danger    { background:#dc3545;        color:#fff; }
+  .btn-row { display:flex; gap:.5rem; flex-wrap:wrap; }
+
+  /* Workflow */
+  .workflow-steps { display:flex; flex-direction:column; gap:.6rem; }
+  .workflow-step  { display:flex; align-items:flex-start; gap:.85rem; background:#fff;
+                    border:1px solid #e0eaef; border-radius:10px; padding:.75rem 1rem; }
+  .step-num  { background:var(--teal); color:#fff; border-radius:50%; width:26px; height:26px;
+               display:flex; align-items:center; justify-content:center;
+               font-weight:700; font-size:.85rem; flex-shrink:0; }
+  .step-body { font-size:.88rem; color:var(--slate); line-height:1.5; }
+  .step-body b { color:var(--navy); }
+  .step-body code { background:#eef4f7; padding:.1rem .35rem; border-radius:4px;
+                    font-size:.82rem; color:var(--teal); }
+</style>
+{% endblock %}

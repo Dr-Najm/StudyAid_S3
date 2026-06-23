@@ -1,0 +1,18 @@
+# /etc/sudoers.d/studyaid
+#
+# Grants the 'pi' user passwordless sudo for ONLY the four commands that
+# the StudyAid Flask app needs for /admin/settings. Nothing else is granted.
+#
+# Install:
+#   sudo cp pi-setup/studyaid_sudoers /etc/sudoers.d/studyaid
+#   sudo chmod 440 /etc/sudoers.d/studyaid
+#   sudo visudo -c          # verify no syntax errors
+#
+# WARNING: never edit this file with a plain text editor while sudoers is live.
+# Always use: sudo visudo -f /etc/sudoers.d/studyaid
+
+pi ALL=(ALL) NOPASSWD: /usr/bin/nmcli connection up studyaid-pi
+pi ALL=(ALL) NOPASSWD: /usr/bin/nmcli connection down studyaid-pi
+pi ALL=(ALL) NOPASSWD: /usr/bin/pkill chromium
+pi ALL=(ALL) NOPASSWD: /usr/bin/shutdown -r +0
+pi ALL=(ALL) NOPASSWD: /usr/bin/shutdown -h +0

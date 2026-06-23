@@ -387,3 +387,253 @@ def view_bank(bank_id):
         q.options = json.loads(q.options_json)
 
     return render_template("admin/view_bank.html", bank=bank, questions=questions)
+
+
+# ── /admin/settings — Booth management ────────────────────────────────────────
+# All POST routes below that mutate data or call system commands are
+# restricted to localhost (127.0.0.1) so they cannot be triggered from
+# a phone or device connected to the studyaid-pi AP.
+
+def _is_local():
+    """True when the request comes from the Pi itself (the kiosk browser)."""
+    return request.remote_addr in ("127.0.0.1", "::1")
+
+
+def _local_only(fn_name):
+    """Flash an error and redirect to settings if caller is not localhost."""
+    flash("Tindakan ini hanya boleh dilakukan dari skrin kiosk (localhost).", "err")
+    return redirect(url_for("admin.settings"))
+
+
+@admin_bp.route("/settings")
+def settings():
+    """Booth management page — visible to anyone on the AP, actions gated."""
+    from models.schema import Session, Student, QuizAnswer, WeeklySlot
+    stats = {
+        "students":  Student.query.count(),
+        "sessions":  Session.query.count(),
+        "banks":     QuizBank.query.count(),
+        "questions": QuizQuestion.query.count(),
+        "answers":   QuizAnswer.query.count(),
+        "topics":    TopicDeadline.query.count(),
+    }
+    # Check AP status via nmcli (Pi only — gracefully returns 'unknown' elsewhere)
+    ap_status = "unknown"
+    try:
+        out = subprocess.check_output(
+            ["nmcli", "-t", "-f", "GENERAL.STATE", "con", "show", "studyaid-pi"],
+            stderr=subprocess.DEVNULL, timeout=3
+        ).decode()
+        ap_status = "active" if "activated" in out.lower() else "inactive"
+    except Exception:
+        ap_status = "unknown"
+    return render_template("admin/settings.html", stats=stats, ap_status=ap_status)
+
+
+# ── Tier 1: Database actions ──────────────────────────────────────────────────
+
+@admin_bp.route("/settings/clear_db", methods=["POST"])
+def settings_clear_db():
+    if not _is_local():
+        return _local_only("settings_clear_db")
+    try:
+        from models.schema import (Student, WeeklySlot, Session, TopicDeadline,
+                                   QuizAnswer, DriftEvent)
+        # Wipe transactional data; keep subjects (firmware depends on IDs)
+        QuizAnswer.query.delete()
+        DriftEvent.query.delete()
+        Session.query.delete()
+        TopicDeadline.query.delete()
+        WeeklySlot.query.delete()
+        QuizQuestion.query.delete()
+        QuizBank.query.delete()
+        Student.query.delete()
+        db.session.commit()
+        # Re-seed students (subjects already present)
+        from models.schema import _SEED_STUDENTS
+        for s in _SEED_STUDENTS:
+            db.session.add(Student(**s))
+        db.session.commit()
+        flash("Pangkalan data telah dikosongkan dan pelajar demo dipulihkan.", "ok")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Ralat semasa mengosongkan DB: {e}", "err")
+    return redirect(url_for("admin.settings"))
+
+
+@admin_bp.route("/settings/seed_demo", methods=["POST"])
+def settings_seed_demo():
+    if not _is_local():
+        return _local_only("settings_seed_demo")
+    try:
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+        from demo_seed import run_demo_seed
+        result = run_demo_seed(wipe=True)
+        if result["ok"]:
+            msg = (f"Data demo berjaya diisi: {result['sessions']} sesi, "
+                   f"{result['banks']} bank kuiz, {result['questions']} soalan, "
+                   f"{result['topics']} topik.")
+            if result.get("missing_banks"):
+                msg += f" Bank tiada dalam bundle: {', '.join(result['missing_banks'])}."
+            flash(msg, "ok")
+        else:
+            flash(f"Ralat: {result['msg']}", "err")
+    except Exception as e:
+        flash(f"Ralat semasa mengisi data demo: {e}", "err")
+    return redirect(url_for("admin.settings"))
+
+
+@admin_bp.route("/settings/close_sessions", methods=["POST"])
+def settings_close_sessions():
+    if not _is_local():
+        return _local_only("settings_close_sessions")
+    try:
+        from models.schema import Session
+        from datetime import datetime
+        stale = Session.query.filter(Session.end_ts.is_(None)).all()
+        for s in stale:
+            s.end_ts = datetime.utcnow()
+        db.session.commit()
+        flash(f"{len(stale)} sesi terbuka telah ditutup.", "ok")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Ralat: {e}", "err")
+    return redirect(url_for("admin.settings"))
+
+
+@admin_bp.route("/settings/regen_banks", methods=["POST"])
+def settings_regen_banks():
+    if not _is_local():
+        return _local_only("settings_regen_banks")
+    # Re-run Gemini quiz generation for topics that have no bank yet.
+    # Requires internet. Fails gracefully per topic.
+    try:
+        regen_count = 0
+        fail_count  = 0
+        topics = TopicDeadline.query.with_entities(
+            TopicDeadline.subject_id, TopicDeadline.topic
+        ).distinct().all()
+        for (subject_id, topic) in topics:
+            existing = QuizBank.query.filter_by(
+                subject_id=subject_id, topic=topic).first()
+            if existing:
+                continue
+            subject = db.session.get(Subject, subject_id)
+            if not subject:
+                continue
+            try:
+                raw = _generate_questions_gemini(
+                    subject.name_bm, subject.name_en, subject.default_lang, topic)
+                bank = QuizBank(subject_id=subject_id, topic=topic,
+                                generated_at=datetime.utcnow(), source="gemini")
+                db.session.add(bank)
+                db.session.flush()
+                for q in raw:
+                    db.session.add(QuizQuestion(
+                        bank_id=bank.id,
+                        question_text=q["question_text"],
+                        options_json=json.dumps(q["options"], ensure_ascii=False),
+                        correct_index=q["correct_index"],
+                        language=q.get("language", subject.default_lang),
+                        difficulty=q.get("difficulty", 1)))
+                db.session.commit()
+                regen_count += 1
+            except Exception:
+                db.session.rollback()
+                fail_count += 1
+        msg = f"Jana semula: {regen_count} bank baru."
+        if fail_count:
+            msg += f" {fail_count} topik gagal (internet diperlukan)."
+        flash(msg, "ok" if regen_count > 0 else "warn")
+    except Exception as e:
+        flash(f"Ralat: {e}", "err")
+    return redirect(url_for("admin.settings"))
+
+
+# ── Tier 2: System actions (localhost only + sudo) ────────────────────────────
+
+@admin_bp.route("/settings/ap_down", methods=["POST"])
+def settings_ap_down():
+    if not _is_local():
+        return _local_only("settings_ap_down")
+    try:
+        subprocess.run(
+            ["sudo", "nmcli", "connection", "down", "studyaid-pi"],
+            check=True, timeout=10, capture_output=True)
+        flash("AP studyaid-pi dimatikan. Sambung ke internet secara manual dari desktop.", "ok")
+    except subprocess.CalledProcessError as e:
+        flash(f"Gagal matikan AP: {e.stderr.decode()}", "err")
+    except Exception as e:
+        flash(f"Ralat: {e}", "err")
+    return redirect(url_for("admin.settings"))
+
+
+@admin_bp.route("/settings/ap_up", methods=["POST"])
+def settings_ap_up():
+    if not _is_local():
+        return _local_only("settings_ap_up")
+    try:
+        subprocess.run(
+            ["sudo", "nmcli", "connection", "up", "studyaid-pi"],
+            check=True, timeout=10, capture_output=True)
+        flash("AP studyaid-pi dihidupkan semula. Peranti boleh bersambung.", "ok")
+    except subprocess.CalledProcessError as e:
+        flash(f"Gagal hidupkan AP: {e.stderr.decode()}", "err")
+    except Exception as e:
+        flash(f"Ralat: {e}", "err")
+    return redirect(url_for("admin.settings"))
+
+
+@admin_bp.route("/settings/exit_kiosk", methods=["POST"])
+def settings_exit_kiosk():
+    if not _is_local():
+        return _local_only("settings_exit_kiosk")
+    try:
+        subprocess.run(["pkill", "chromium"], timeout=5, capture_output=True)
+        # Response is returned before chromium actually dies — that's fine.
+        return "<html><body style='font-family:sans-serif;padding:2em'>" \
+               "<h2>Kiosk ditutup.</h2>" \
+               "<p>Anda kini berada di desktop. Sambungkan Pi ke internet " \
+               "melalui ikon WiFi di penjuru kanan atas, kemudian buka " \
+               "<b>http://localhost:5000</b> dalam Chromium untuk " \
+               "demonstrasi AI langsung.</p>" \
+               "<p>Untuk kembali ke mod booth: reboot Pi atau jalankan " \
+               "skrip kiosk secara manual.</p></body></html>"
+    except Exception as e:
+        flash(f"Ralat: {e}", "err")
+        return redirect(url_for("admin.settings"))
+
+
+@admin_bp.route("/settings/reboot", methods=["POST"])
+def settings_reboot():
+    if not _is_local():
+        return _local_only("settings_reboot")
+    try:
+        # Fire reboot in background so Flask can return the response first
+        subprocess.Popen(["sudo", "shutdown", "-r", "+0"])
+        return "<html><body style='font-family:sans-serif;padding:2em'>" \
+               "<h2>Pi sedang dimulakan semula&hellip;</h2>" \
+               "<p>Booth akan kembali dalam masa &plusmn;45 saat.</p>" \
+               "</body></html>"
+    except Exception as e:
+        flash(f"Ralat reboot: {e}", "err")
+        return redirect(url_for("admin.settings"))
+
+
+@admin_bp.route("/settings/poweroff", methods=["POST"])
+def settings_poweroff():
+    if not _is_local():
+        return _local_only("settings_poweroff")
+    try:
+        # Fire shutdown in background so Flask can return the response first
+        subprocess.Popen(["sudo", "shutdown", "-h", "+0"])
+        return "<html><body style='font-family:sans-serif;padding:2em'>" \
+               "<h2>Pi sedang dimatikan&hellip;</h2>" \
+               "<p>Tunggu sehingga lampu LED hijau berhenti berkelip " \
+               "(&plusmn;10 saat) sebelum mencabut palam kuasa.</p>" \
+               "<p>Untuk hidupkan semula: cabut dan pasang semula palam kuasa.</p>" \
+               "</body></html>"
+    except Exception as e:
+        flash(f"Ralat matikan Pi: {e}", "err")
+        return redirect(url_for("admin.settings"))
