@@ -8,7 +8,7 @@ import json
 import subprocess
 from datetime import datetime
 from flask import Blueprint, flash, render_template, request, redirect, url_for
-from models.schema import db, Subject, QuizBank, QuizQuestion
+from models.schema import db, Subject, QuizBank, QuizQuestion, TopicDeadline
 import config
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
