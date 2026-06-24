@@ -2208,11 +2208,14 @@ void handleBtnB() {
       quizState.isDriftQuiz = false;
 
       // Start a quiz-only session on the server so answers are stored properly.
+      // v12.1: is_quiz=true tells the server this is Mod Kuiz, not a study session,
+      // so it is excluded from the live monitor and booth welcome screen.
       if (companionReady && !sessionActive) {
         StaticJsonDocument<128> qStartDoc;
         qStartDoc["device_id"]  = deviceId;
         qStartDoc["subject_id"] = quizSubjectIdx + 1;
         qStartDoc["start_ts"]   = (long)(millis() / 1000);
+        qStartDoc["is_quiz"]    = true;
         String qStartBody; serializeJson(qStartDoc, qStartBody);
         String qStartResp = postToServerWithResponse("/api/session/start", qStartBody);
         if (qStartResp.length() > 0) {

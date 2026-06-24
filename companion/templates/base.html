@@ -79,17 +79,16 @@
 <body>
   <nav>
     <div class="brand">📚 StudyAid</div>
-    <a href="/student/" class="{% if active=='student' %}active{% endif %}">Pelajar</a>
-    <a href="/student/live" class="{% if active=='live' %}active{% endif %}"
-       style="{% if active=='live' %}{% endif %}">
+    <a href="/student/live" class="{% if active=='live' %}active{% endif %}">
       <span id="nav-live-dot" style="display:inline-block;width:8px;height:8px;
             border-radius:50%;background:#9BB5CC;margin-right:4px;
             vertical-align:middle"></span>Sesi Langsung
     </a>
+    <a href="/student/" class="{% if active=='student' %}active{% endif %}">Pelajar</a>
     <a href="/student/plan" class="{% if active=='plan' %}active{% endif %}">Perancangan</a>
     <a href="/admin/generate" class="{% if active=='generate' %}active{% endif %}">Jana Kuiz</a>
-    <a href="/admin/settings" class="{% if active=='settings' %}active{% endif %}">⚙ Tetapan</a>
     <a href="/teacher/" class="{% if active=='teacher' %}active{% endif %}">Guru</a>
+    <a href="/admin/settings" class="{% if active=='settings' %}active{% endif %}">⚙ Tetapan</a>
   </nav>
   <div class="page">
     {% with messages = get_flashed_messages(with_categories=true) %}

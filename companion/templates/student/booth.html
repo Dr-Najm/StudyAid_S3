@@ -41,11 +41,11 @@
     #screen-idle { gap: 1.5rem; }
 
     .logo-mark {
-      width: 120px; height: 120px;
+      width: 160px; height: 160px;
       background: var(--teal);
-      border-radius: 30px;
+      border-radius: 36px;
       display: flex; align-items: center; justify-content: center;
-      font-size: 3.5rem;
+      font-size: 4.5rem;
       box-shadow: 0 0 60px rgba(13,124,124,0.4);
       animation: pulse-glow 3s ease-in-out infinite;
     }
@@ -55,24 +55,37 @@
     }
 
     .idle-title {
-      font-size: 3.2rem; font-weight: 700;
+      font-size: 4rem; font-weight: 700;
       color: var(--white); letter-spacing: -0.02em;
     }
     .idle-subtitle {
-      font-size: 1.25rem; color: var(--ice);
+      font-size: 1.6rem; color: var(--ice);
       text-align: center; max-width: 480px; line-height: 1.5;
     }
     .idle-hint {
       margin-top: 1rem;
-      font-size: 1rem; color: var(--slate);
+      font-size: 1.2rem; color: var(--slate);
       animation: blink 2.5s ease-in-out infinite;
     }
     @keyframes blink { 0%,100%{opacity:.4} 50%{opacity:1} }
 
     .footer-tag {
       position: absolute; bottom: 1.5rem;
-      font-size: 0.8rem; color: var(--slate); letter-spacing: .05em;
+      font-size: 0.9rem; color: var(--slate); letter-spacing: .05em;
     }
+
+    /* Exit button — always visible top-right corner */
+    .exit-btn {
+      position: fixed; top: 1rem; right: 1rem; z-index: 999;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(155,181,204,0.25);
+      border-radius: 10px; padding: .5rem 1rem;
+      color: var(--ice); font-size: 1rem; font-weight: 600;
+      cursor: pointer; text-decoration: none;
+      transition: background .2s;
+      display: flex; align-items: center; gap: .4rem;
+    }
+    .exit-btn:hover { background: rgba(255,255,255,0.18); color: var(--white); }
 
     /* ── WELCOME screen ──────────────────────────────────────────────────── */
     #screen-welcome {
@@ -88,12 +101,12 @@
       margin-bottom: 1.5rem;
     }
     .welcome-hi {
-      font-size: 3.8rem; font-weight: 800; line-height: 1;
+      font-size: 5rem; font-weight: 800; line-height: 1;
       color: var(--white); letter-spacing: -0.02em;
     }
     .welcome-hi span { color: var(--teal); }
     .welcome-subtitle {
-      font-size: 1.1rem; color: var(--ice); margin-top: .4rem;
+      font-size: 1.4rem; color: var(--ice); margin-top: .4rem;
     }
 
     .welcome-grid {
@@ -110,38 +123,38 @@
       display: flex; flex-direction: column; gap: .5rem;
     }
     .wcard-label {
-      font-size: .75rem; font-weight: 700; letter-spacing: .08em;
+      font-size: 1rem; font-weight: 700; letter-spacing: .08em;
       color: var(--teal); text-transform: uppercase;
     }
     .wcard-title {
-      font-size: 1rem; font-weight: 600; color: var(--white);
+      font-size: 1.2rem; font-weight: 600; color: var(--white);
     }
 
     /* Today's plan */
     .plan-list { list-style: none; display: flex; flex-direction: column; gap: .4rem; }
     .plan-item {
       display: flex; align-items: center; gap: .6rem;
-      font-size: .95rem; color: var(--ice);
+      font-size: 1.1rem; color: var(--ice);
     }
     .plan-dot {
       width: 8px; height: 8px; border-radius: 50%;
       background: var(--teal); flex-shrink: 0;
     }
     .plan-time { color: var(--slate); font-size: .85rem; min-width: 50px; }
-    .plan-empty { font-size: .9rem; color: var(--slate); font-style: italic; }
+    .plan-empty { font-size: 1.1rem; color: var(--slate); font-style: italic; }
 
     /* Deadline */
     .deadline-days {
-      font-size: 2.8rem; font-weight: 800; color: var(--teal); line-height: 1;
+      font-size: 3.8rem; font-weight: 800; color: var(--teal); line-height: 1;
     }
     .deadline-days.urgent { color: var(--warn); }
     .deadline-days.overdue { color: var(--danger); }
-    .deadline-unit { font-size: .9rem; color: var(--slate); }
-    .deadline-topic { font-size: .9rem; color: var(--ice); margin-top: .2rem; }
+    .deadline-unit { font-size: 1.1rem; color: var(--slate); }
+    .deadline-topic { font-size: 1.1rem; color: var(--ice); margin-top: .2rem; }
 
     /* Motivation */
     .motivasi-text {
-      font-size: 1.1rem; color: var(--white); line-height: 1.5;
+      font-size: 1.3rem; color: var(--white); line-height: 1.5;
       font-style: italic;
     }
     .streak-badge {
@@ -149,7 +162,7 @@
       background: rgba(13,124,124,0.2);
       border: 1px solid var(--teal);
       border-radius: 20px; padding: .3rem .8rem;
-      font-size: .85rem; color: var(--teal); font-weight: 600;
+      font-size: 1.3rem; color: var(--teal); font-weight: 600;
       margin-bottom: .5rem;
     }
 
@@ -167,8 +180,8 @@
     .live-who {
       display: flex; flex-direction: column;
     }
-    .live-name { font-size: 1.6rem; font-weight: 700; color: var(--white); }
-    .live-subject { font-size: 1rem; color: var(--teal); }
+    .live-name { font-size: 2.2rem; font-weight: 700; color: var(--white); }
+    .live-subject { font-size: 1.3rem; color: var(--teal); }
     .live-dot-wrap { display: flex; align-items: center; gap: .5rem; }
     .live-dot {
       width: 12px; height: 12px; border-radius: 50%;
@@ -179,7 +192,7 @@
       0%,100%{opacity:1; transform:scale(1)}
       50%    {opacity:.5; transform:scale(1.3)}
     }
-    .live-status { font-size: .9rem; color: var(--good); font-weight: 600; }
+    .live-status { font-size: 1.1rem; color: var(--good); font-weight: 600; }
 
     .live-metrics {
       width: 100%; display: grid;
@@ -193,20 +206,20 @@
       display: flex; flex-direction: column; gap: .3rem;
     }
     .metric-label {
-      font-size: .72rem; font-weight: 700; letter-spacing: .08em;
+      font-size: 1rem; font-weight: 700; letter-spacing: .08em;
       color: var(--slate); text-transform: uppercase;
     }
     .metric-val {
-      font-size: 2.2rem; font-weight: 800; color: var(--white);
+      font-size: 3rem; font-weight: 800; color: var(--white);
       line-height: 1;
     }
-    .metric-unit { font-size: .8rem; color: var(--slate); }
+    .metric-unit { font-size: 1rem; color: var(--slate); }
 
     /* Focus bar */
     .focus-wrap { width: 100%; padding: 0 .5rem; }
     .focus-label {
       display: flex; justify-content: space-between;
-      font-size: .82rem; color: var(--slate); margin-bottom: .4rem;
+      font-size: 1rem; color: var(--slate); margin-bottom: .4rem;
     }
     .focus-track {
       width: 100%; height: 10px; background: rgba(255,255,255,0.08);
@@ -222,20 +235,25 @@
 
     /* Drift log */
     .drift-section { width: 100%; padding: 0 .5rem; }
-    .drift-title { font-size: .75rem; color: var(--slate); letter-spacing: .05em;
+    .drift-title { font-size: 1rem; color: var(--slate); letter-spacing: .05em;
                    text-transform: uppercase; margin-bottom: .5rem; }
-    .drift-empty { font-size: .85rem; color: var(--slate); font-style: italic; }
+    .drift-empty { font-size: 1rem; color: var(--slate); font-style: italic; }
     .drift-list  { display: flex; flex-direction: column; gap: .3rem; }
     .drift-row   { display: flex; align-items: center; gap: .6rem; font-size: .85rem; }
-    .drift-ts    { color: var(--slate); min-width: 70px; }
+    .drift-ts    { color: var(--slate); min-width: 80px; font-size: 1rem; }
     .drift-badge {
-      padding: .15rem .55rem; border-radius: 10px; font-size: .75rem; font-weight: 600;
+      padding: .15rem .55rem; border-radius: 10px; font-size: 1rem; font-weight: 600;
     }
     .drift-badge.warning { background: rgba(245,158,11,.15); color: var(--warn); }
     .drift-badge.alert   { background: rgba(239,68,68,.15);  color: var(--danger); }
   </style>
 </head>
 <body>
+
+  <!-- Exit button — always visible, links back to main nav -->
+  <a href="/student/" class="exit-btn" title="Keluar dari paparan booth">
+    ☰ Menu
+  </a>
 
   <!-- ── IDLE ───────────────────────────────────────────────────────────────── -->
   <div class="screen active" id="screen-idle">

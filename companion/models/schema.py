@@ -124,6 +124,9 @@ class Session(db.Model):
     active_min = db.Column(db.Integer, nullable=False, default=0)
     idle_min = db.Column(db.Integer, nullable=False, default=0)
     focus_score = db.Column(db.Float, nullable=False, default=0.0)
+    # v12.1: True when this session was created by Mod Kuiz (standalone quiz),
+    # not a real study session. Excluded from live monitor and booth state.
+    is_quiz = db.Column(db.Boolean, nullable=False, default=False)
 
 
 class DriftEvent(db.Model):

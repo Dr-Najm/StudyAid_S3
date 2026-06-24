@@ -125,6 +125,10 @@ def session_start():
     # v11: device sends topic name chosen at session start (empty string = free study)
     topic      = payload.get("topic", "").strip()
 
+    # v12.1: Mod Kuiz sends is_quiz=true so the server can exclude these
+    # from the live monitor and booth state (they are not real study sessions)
+    is_quiz = bool(payload.get("is_quiz", False))
+
     student = Student.query.filter_by(device_id=device_id).first()
     if not student:
         _log("session/start", f"AMARAN: device_id '{device_id}' tidak dijumpai")
@@ -138,6 +142,7 @@ def session_start():
         active_min  = 0,
         idle_min    = 0,
         focus_score = 0.0,
+        is_quiz     = is_quiz,
     )
     db.session.add(session)
     db.session.commit()
@@ -452,7 +457,8 @@ def live():
     MAX_SESSION_HOURS = 8
     active_session = (Session.query
         .filter_by(student_id=student.id)
-        .filter(Session.end_ts == None)  # noqa: E711
+        .filter(Session.end_ts == None)   # noqa: E711
+        .filter(Session.is_quiz == False)  # noqa: E712 — exclude Mod Kuiz sessions
         .order_by(Session.start_ts.desc())
         .first())
 
@@ -669,6 +675,7 @@ def booth_state():
     # ── State 1: live — any active session ───────────────────────────────────
     active = (Session.query
               .filter(Session.end_ts.is_(None))
+              .filter(Session.is_quiz == False)   # noqa: E712 — exclude Mod Kuiz sessions
               .order_by(Session.start_ts.desc())
               .first())
     if active:
