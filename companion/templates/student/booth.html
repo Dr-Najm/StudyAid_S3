@@ -382,6 +382,14 @@
       </div>
     </div>
     <div class="footer-tag">SMK Gudang Rasau (SEGRA) · Kuantan, Pahang · v12</div>
+    <button onclick="forceIdle()" style="
+      position:absolute; bottom:1.4rem; right:1.5rem;
+      background:rgba(255,255,255,0.07); border:1px solid rgba(155,181,204,0.2);
+      color:rgba(155,181,204,0.6); font-size:.85rem; padding:.4rem .9rem;
+      border-radius:8px; cursor:pointer; transition:all .2s; z-index:2;
+      backdrop-filter:blur(8px);" onmouseover="this.style.background='rgba(255,255,255,0.15)';this.style.color='#fff'" onmouseout="this.style.background='rgba(255,255,255,0.07)';this.style.color='rgba(155,181,204,0.6)'">
+      Tutup
+    </button>
   </div>
 
   <!-- ── LIVE ──────────────────────────────────────────────────────────────── -->
@@ -743,10 +751,22 @@
     try {
       const res  = await fetch('/api/booth/state');
       const data = await res.json();
+      if (idleOverride && data.state !== 'live') return; // respect manual dismiss unless live
       if      (data.state === 'live')    renderLive(data);
       else if (data.state === 'welcome') renderWelcome(data);
       else    showScreen('idle');
     } catch(e) { /* network blip — stay on current screen */ }
+  }
+
+  // Manual dismiss — forces idle screen and pauses polling for 3 min
+  let idleOverride = false;
+  let idleOverrideTimer = null;
+  function forceIdle() {
+    idleOverride = true;
+    showScreen('idle');
+    // Clear override after 3 min so booth naturally resumes
+    clearTimeout(idleOverrideTimer);
+    idleOverrideTimer = setTimeout(() => { idleOverride = false; }, 180000);
   }
 
   poll();
