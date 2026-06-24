@@ -751,22 +751,19 @@
     try {
       const res  = await fetch('/api/booth/state');
       const data = await res.json();
-      if (idleOverride && data.state !== 'live') return; // respect manual dismiss unless live
+      // If user dismissed welcome, clear override on next poll so it can return naturally
+      if (idleOverride) { idleOverride = false; return; }
       if      (data.state === 'live')    renderLive(data);
       else if (data.state === 'welcome') renderWelcome(data);
       else    showScreen('idle');
     } catch(e) { /* network blip — stay on current screen */ }
   }
 
-  // Manual dismiss — forces idle screen and pauses polling for 3 min
+  // Manual dismiss — forces idle screen until next poll naturally returns welcome/live
   let idleOverride = false;
-  let idleOverrideTimer = null;
   function forceIdle() {
     idleOverride = true;
     showScreen('idle');
-    // Clear override after 3 min so booth naturally resumes
-    clearTimeout(idleOverrideTimer);
-    idleOverrideTimer = setTimeout(() => { idleOverride = false; }, 180000);
   }
 
   poll();
