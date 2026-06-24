@@ -764,3 +764,16 @@ def booth_state():
 
     # ── State 3: idle ─────────────────────────────────────────────────────────
     return jsonify({"state": "idle"})
+
+
+@api_bp.route("/booth/dismiss", methods=["POST"])
+def booth_dismiss():
+    """
+    Called by the kiosk when the user clicks 'Tutup'.
+    Clears ALL presence entries so the server immediately returns idle
+    instead of welcome — even if devices are still within the timeout window.
+    The next genuine hello ping from a device will restore presence normally.
+    """
+    _booth_presence.clear()
+    _log("booth/dismiss", "Presence cleared by kiosk dismiss button")
+    return jsonify({"ok": True})

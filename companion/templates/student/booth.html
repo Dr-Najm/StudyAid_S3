@@ -751,18 +751,16 @@
     try {
       const res  = await fetch('/api/booth/state');
       const data = await res.json();
-      // If user dismissed welcome, clear override on next poll so it can return naturally
-      if (idleOverride) { idleOverride = false; return; }
       if      (data.state === 'live')    renderLive(data);
       else if (data.state === 'welcome') renderWelcome(data);
-      else    showScreen('idle');
+      else                               showScreen('idle');
     } catch(e) { /* network blip — stay on current screen */ }
   }
 
-  // Manual dismiss — forces idle screen until next poll naturally returns welcome/live
-  let idleOverride = false;
+  // Manual dismiss — tells the SERVER to clear presence so welcome stops returning.
+  // The next genuine hello ping from any device will restore welcome normally.
   function forceIdle() {
-    idleOverride = true;
+    fetch('/api/booth/dismiss', { method: 'POST' });
     showScreen('idle');
   }
 
