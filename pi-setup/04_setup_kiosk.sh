@@ -30,7 +30,7 @@ set -e
 PI_USER="$(whoami)"
 LABWC_DIR="/home/$PI_USER/.config/labwc"
 AUTOSTART_FILE="$LABWC_DIR/autostart"
-KIOSK_URL="http://localhost:5000/student/live"
+KIOSK_URL="http://localhost:5000/booth"
 
 # The kiosk launch line. ( ... ) & runs it in the background so the 15s sleep
 # does not block the rest of the labwc autostart. 15s lets the session + Flask
@@ -43,7 +43,7 @@ touch "$AUTOSTART_FILE"
 
 echo "[2/2] Adding kiosk launch to $AUTOSTART_FILE ..."
 # Avoid duplicate entries if the script is run more than once
-if grep -q "studyaid kiosk" "$AUTOSTART_FILE" 2>/dev/null || grep -q "student/live" "$AUTOSTART_FILE" 2>/dev/null; then
+if grep -q "studyaid kiosk" "$AUTOSTART_FILE" 2>/dev/null || grep -q "booth" "$AUTOSTART_FILE" 2>/dev/null; then
     echo "  Kiosk launch already present — skipping (edit $AUTOSTART_FILE to change)."
 else
     {

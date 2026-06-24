@@ -459,6 +459,15 @@ char activeTopicName[MAX_TOPIC_LEN] = "";  // "" = Ulangkaji Bebas (free study)
 #define FOCUS_REPORT_INTERVAL_MS 15000UL
 
 unsigned long lastFocusReportMs = 0;
+
+// ─── v12.1: Booth hello ping ─────────────────────────────────────────────────
+// POSTs /api/hello immediately on WiFi connect, then every 30 seconds.
+// This tells the booth kiosk (/booth) that a device is present so it can
+// show the welcome screen with the student's name and study plan.
+// Runs independently of any session — works in companion mode even at idle.
+#define HELLO_INTERVAL_MS 30000UL
+
+unsigned long lastHelloMs = 0;
 #define MAX_WARN_BUF 8
 unsigned long warnTimestamps[MAX_WARN_BUF];
 int           warnBufCount    = 0;
@@ -3072,6 +3081,15 @@ void initCompanionWiFi() {
     M5.Display.setTextColor(WHITE, BLACK);
     Serial.printf("[v9] WiFi terhubung. IP peranti: %s\n", WiFi.localIP().toString().c_str());
     Serial.printf("[v9] Pelayan: http://%s:%d\n", COMP_SERVER_IP, COMP_SERVER_PORT);
+    // v12.1: Send initial hello ping so booth kiosk knows this device is present
+    {
+      StaticJsonDocument<64> hDoc;
+      hDoc["device_id"] = deviceId;
+      String hBody; serializeJson(hDoc, hBody);
+      postToServer("/api/hello", hBody);
+      lastHelloMs = millis();
+      Serial.printf("[v12.1] Hello ping dihantar untuk %s\n", deviceId);
+    }
   } else {
     // Connection failed — fall back to Solo mode so the device remains usable
     companionMode  = false;
@@ -3697,5 +3715,15 @@ void loop() {
       Serial.printf("[v9.2] Fokus dilaporkan: %d%% (sesi %d)\n",
                     focusScore, serverSessionId);
     }
+  }
+
+  // v12.1: Periodic hello ping — keeps booth kiosk welcome screen alive.
+  // Fires every 30s in companion mode regardless of session state.
+  if (companionReady && (millis() - lastHelloMs >= HELLO_INTERVAL_MS)) {
+    lastHelloMs = millis();
+    StaticJsonDocument<64> hDoc;
+    hDoc["device_id"] = deviceId;
+    String hBody; serializeJson(hDoc, hBody);
+    postToServer("/api/hello", hBody);
   }
 }

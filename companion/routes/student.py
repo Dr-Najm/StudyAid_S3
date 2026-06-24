@@ -443,3 +443,18 @@ def plan_json():
         "deadlines": [{"id":d.id,"topic":d.topic,"deadline":str(d.deadline),
                        "status":d.status} for d in deadlines],
     })
+
+
+# ── Booth kiosk page ──────────────────────────────────────────────────────────
+@student_bp.route("/booth")
+def booth():
+    """
+    Dedicated kiosk page for the competition booth.
+    Polls /api/booth/state every 3s and transitions between:
+      idle    — no device nearby
+      welcome — device connected, no active session
+      live    — session in progress
+    Only this page reacts to device hello-pings.
+    Laptops on other pages (planner, teacher, dashboard) are unaffected.
+    """
+    return render_template("student/booth.html")

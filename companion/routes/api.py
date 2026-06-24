@@ -624,3 +624,136 @@ def session_end():
              f"dirancang={slot.duration_min}min)")
 
     return jsonify({"ok": True, "session_id": session.id, "adherence": adherence})
+
+
+# ── Booth presence ────────────────────────────────────────────────────────────
+# In-memory: { device_id: datetime }  resets on server restart.
+_booth_presence = {}
+BOOTH_PRESENCE_TIMEOUT_S = 180   # 3 min no ping -> device gone
+
+_MOTIVASI = [
+    "Setiap minit belajar membina masa depan anda.",
+    "Konsisten adalah kunci kejayaan SPM.",
+    "Fokus hari ini, kejayaan esok.",
+    "Pelajar terbaik bukan yang paling bijak, tapi yang paling gigih.",
+    "Mulakan dengan langkah pertama — StudyAid akan pandu anda.",
+]
+_motivasi_idx = 0
+
+
+@api_bp.route("/hello", methods=["POST"])
+def device_hello():
+    """
+    Device calls this immediately after WiFi connects, then every 30s.
+    Records presence so the /booth page can greet the student.
+    """
+    global _motivasi_idx
+    payload   = request.get_json(silent=True) or {}
+    device_id = payload.get("device_id", "")
+    if not device_id:
+        return jsonify({"ok": False, "error": "device_id required"}), 400
+    _booth_presence[device_id] = datetime.utcnow()
+    _log("hello", f"{device_id} pinged")
+    return jsonify({"ok": True})
+
+
+@api_bp.route("/booth/state", methods=["GET"])
+def booth_state():
+    """
+    Kiosk polls this every 3s to decide what to display.
+    Returns one of three states: 'live', 'welcome', 'idle'.
+    """
+    global _motivasi_idx
+    now = datetime.utcnow()
+
+    # ── State 1: live — any active session ───────────────────────────────────
+    active = (Session.query
+              .filter(Session.end_ts.is_(None))
+              .order_by(Session.start_ts.desc())
+              .first())
+    if active:
+        student = db.session.get(Student, active.student_id)
+        subject = db.session.get(Subject, active.subject_id)
+        elapsed_sec = int((now - active.start_ts).total_seconds())
+        drift_events = (DriftEvent.query
+                        .filter_by(session_id=active.id)
+                        .order_by(DriftEvent.ts.desc()).all())
+        drift_log = [{"ts": d.ts.strftime("%H:%M:%S"), "severity": d.severity}
+                     for d in drift_events[:5]]
+        return jsonify({
+            "state":        "live",
+            "student_name": student.name if student else "",
+            "subject":      subject.name_bm if subject else "",
+            "start_ts":     active.start_ts.strftime("%H:%M"),
+            "elapsed_min":  elapsed_sec // 60,
+            "elapsed_sec":  elapsed_sec % 60,
+            "focus_score":  round(active.focus_score or 0),
+            "drift_count":  len(drift_events),
+            "quiz_count":   QuizAnswer.query.filter_by(session_id=active.id).count(),
+            "drift_log":    drift_log,
+        })
+
+    # ── State 2: welcome — device present but no session ─────────────────────
+    # Find most recent ping within timeout window
+    recent = {did: ts for did, ts in _booth_presence.items()
+              if (now - ts).total_seconds() < BOOTH_PRESENCE_TIMEOUT_S}
+    if recent:
+        latest_did = max(recent, key=lambda d: recent[d])
+        student = Student.query.filter_by(device_id=latest_did).first()
+        if student:
+            first_name = student.name.split()[0]   # "Muhammad Khalish" → "Muhammad"
+            # Use first name only (first token); adjust if you prefer given name
+            # Today's weekly slots
+            today_dow = now.weekday()   # 0=Mon … 6=Sun
+            slots = (WeeklySlot.query
+                     .filter_by(student_id=student.id, day_of_week=today_dow)
+                     .order_by(WeeklySlot.start_time).all())
+            today_plan = [{"subject": db.session.get(Subject, s.subject_id).name_bm,
+                           "time":    s.start_time,
+                           "dur":     s.duration_min}
+                          for s in slots]
+
+            # Nearest upcoming deadline
+            nearest = (TopicDeadline.query
+                       .filter_by(student_id=student.id)
+                       .filter(TopicDeadline.deadline >= now.date())
+                       .order_by(TopicDeadline.deadline).first())
+            deadline_info = None
+            if nearest:
+                days_left = (nearest.deadline - now.date()).days
+                subj = db.session.get(Subject, nearest.subject_id)
+                deadline_info = {
+                    "subject": subj.name_bm if subj else "",
+                    "topic":   nearest.topic,
+                    "days":    days_left,
+                }
+
+            # Streak
+            streak = 0
+            check  = now.date() - timedelta(days=1)
+            for _ in range(30):
+                had = Session.query.filter_by(student_id=student.id).filter(
+                    db.func.date(Session.start_ts) == check).first()
+                if had:
+                    streak += 1
+                    check -= timedelta(days=1)
+                else:
+                    break
+            if streak > 0:
+                motivasi = f"{streak} hari berturut-turut — teruskan semangat!"
+            else:
+                motivasi = _MOTIVASI[_motivasi_idx % len(_MOTIVASI)]
+                _motivasi_idx += 1
+
+            return jsonify({
+                "state":        "welcome",
+                "first_name":   first_name,
+                "full_name":    student.name,
+                "today_plan":   today_plan,
+                "deadline":     deadline_info,
+                "motivasi":     motivasi,
+                "streak":       streak,
+            })
+
+    # ── State 3: idle ─────────────────────────────────────────────────────────
+    return jsonify({"state": "idle"})
