@@ -78,7 +78,10 @@
 </head>
 <body>
   <nav>
-    <div class="brand">📚 StudyAid</div>
+    <a href="/student/booth" class="brand" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:8px" title="Kembali ke paparan booth">
+      <img src="/static/img/segra_logo.jpg" alt="SEGRA" style="height:32px;width:32px;border-radius:50%;vertical-align:middle">
+      StudyAid
+    </a>
     <a href="/student/live" class="{% if active=='live' %}active{% endif %}">
       <span id="nav-live-dot" style="display:inline-block;width:8px;height:8px;
             border-radius:50%;background:#9BB5CC;margin-right:4px;
@@ -89,6 +92,7 @@
     <a href="/admin/generate" class="{% if active=='generate' %}active{% endif %}">Jana Kuiz</a>
     <a href="/teacher/" class="{% if active=='teacher' %}active{% endif %}">Guru</a>
     <a href="/admin/settings" class="{% if active=='settings' %}active{% endif %}">⚙ Tetapan</a>
+    <a href="/student/booth" class="{% if active=='booth' %}active{% endif %}">🖥 Booth</a>
   </nav>
   <div class="page">
     {% with messages = get_flashed_messages(with_categories=true) %}

@@ -41,14 +41,14 @@
     #screen-idle { gap: 1.5rem; }
 
     .logo-mark {
-      width: 160px; height: 160px;
-      background: var(--teal);
-      border-radius: 36px;
+      width: 180px; height: 180px;
+      border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
-      font-size: 4.5rem;
+      overflow: hidden;
       box-shadow: 0 0 60px rgba(13,124,124,0.4);
       animation: pulse-glow 3s ease-in-out infinite;
     }
+    .logo-mark img { width: 100%; height: 100%; object-fit: cover; }
     @keyframes pulse-glow {
       0%,100% { box-shadow: 0 0 40px rgba(13,124,124,0.3); }
       50%      { box-shadow: 0 0 80px rgba(13,124,124,0.6); }
@@ -257,7 +257,7 @@
 
   <!-- ── IDLE ───────────────────────────────────────────────────────────────── -->
   <div class="screen active" id="screen-idle">
-    <div class="logo-mark">📚</div>
+    <div class="logo-mark"><img src="/static/img/segra_logo.jpg" alt="SMK Gudang Rasau"></div>
     <div class="idle-title">StudyAid</div>
     <div class="idle-subtitle">Sistem Pemantauan Tabiat Belajar Berasaskan Pakaian Pintar</div>
     <div class="idle-hint">Hidupkan peranti untuk bermula</div>
