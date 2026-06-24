@@ -1,22 +1,35 @@
 {
   "version": 1,
-  "note": "Offline quiz bundle for the StudyAid booth. The 'Isi Data Demo' settings button loads quiz banks from this file so no internet (Gemini) call is needed. This starter file covers the topics used in the live demo. To capture your FULL Gemini-generated set for all 16 topics, run: python export_demo_bundle.py (on a machine with a populated studyaid.db), which overwrites this file. Topic strings MUST match seed_demo.py exactly.",
+  "note": "Full offline quiz bundle — 16 topics, hand-authored by Claude. No Gemini call needed. Generated for StudyAid v12 competition demo.",
   "banks": [
     {
-      "subject_name_bm": "Sejarah",
-      "topic": "Bab 5 — Kemerdekaan dan Pembangunan Negara",
-      "profile": "Membaca",
+      "subject_name_bm": "Bahasa Melayu",
+      "topic": "Penulisan Karangan — Jenis dan Format",
+      "profile": "Campuran",
       "questions": [
-        {"question_text": "Pada tarikh berapakah Persekutuan Tanah Melayu mencapai kemerdekaan?", "options": ["31 Ogos 1957", "16 September 1963", "31 Ogos 1960", "1 Januari 1958"], "correct_index": 0, "language": "bm", "difficulty": 1},
-        {"question_text": "Siapakah Perdana Menteri pertama Malaysia?", "options": ["Tun Abdul Razak", "Tun Hussein Onn", "Tunku Abdul Rahman", "Tun Dr. Mahathir Mohamad"], "correct_index": 2, "language": "bm", "difficulty": 1},
-        {"question_text": "Apakah nama perjanjian yang membawa kepada kemerdekaan Tanah Melayu?", "options": ["Perjanjian Pangkor", "Perjanjian London", "Perjanjian Persekutuan", "Perjanjian Bangkok"], "correct_index": 1, "language": "bm", "difficulty": 2},
-        {"question_text": "Malaysia ditubuhkan pada tahun?", "options": ["1957", "1960", "1963", "1965"], "correct_index": 2, "language": "bm", "difficulty": 1},
-        {"question_text": "Siapakah Yang di-Pertuan Agong pertama Malaysia?", "options": ["Sultan Hisamuddin", "Tuanku Abdul Halim", "Tuanku Abdul Rahman", "Sultan Ismail Nasiruddin"], "correct_index": 2, "language": "bm", "difficulty": 2},
-        {"question_text": "Apakah nama parti yang mengetuai kemerdekaan Tanah Melayu?", "options": ["DAP", "MIC", "MCA", "UMNO"], "correct_index": 3, "language": "bm", "difficulty": 1},
-        {"question_text": "Berapakah bilangan negeri yang membentuk Malaysia pada 1963?", "options": ["11", "13", "14", "12"], "correct_index": 2, "language": "bm", "difficulty": 2},
-        {"question_text": "Negara manakah yang keluar dari Malaysia pada tahun 1965?", "options": ["Sarawak", "Sabah", "Singapura", "Brunei"], "correct_index": 2, "language": "bm", "difficulty": 1},
-        {"question_text": "Slogan yang dilaungkan oleh Tunku Abdul Rahman semasa pengisytiharan kemerdekaan ialah?", "options": ["Merdeka!", "Malaysia Boleh!", "Hidup Melayu!", "Daulat Tuanku!"], "correct_index": 0, "language": "bm", "difficulty": 1},
-        {"question_text": "Di manakah pengisytiharan kemerdekaan Tanah Melayu diadakan?", "options": ["Dataran Merdeka", "Stadium Merdeka", "Istana Negara", "Bangunan Sultan Abdul Samad"], "correct_index": 1, "language": "bm", "difficulty": 2}
+        {"question_text": "Apakah jenis karangan yang menceritakan sesuatu peristiwa atau pengalaman?", "options": ["Karangan perbahasan", "Karangan rencana", "Karangan penceritaan", "Karangan surat"], "correct_index": 2, "language": "bm", "difficulty": 1},
+        {"question_text": "Format karangan surat rasmi MESTI mengandungi:", "options": ["Alamat penghantar dan tarikh sahaja", "Alamat penghantar, tarikh, alamat penerima, dan rujukan", "Nama pengarang dan tarikh sahaja", "Tajuk dan isi sahaja"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Karangan jenis manakah yang membentangkan dua pihak bertentangan?", "options": ["Perbahasan", "Penceritaan", "Rencana", "Dialog"], "correct_index": 0, "language": "bm", "difficulty": 1},
+        {"question_text": "Pendahuluan karangan bertujuan untuk:", "options": ["Merumuskan isi", "Menarik minat pembaca dan memperkenalkan topik", "Memberi kesimpulan", "Menyenaraikan fakta"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Dalam karangan rencana, setiap perenggan isi HARUS mengandungi:", "options": ["Ayat topik, huraian, dan contoh", "Tajuk dan kesimpulan", "Dialog dan tindakan", "Sajak dan pantun"], "correct_index": 0, "language": "bm", "difficulty": 2},
+        {"question_text": "Apakah fungsi penutup karangan?", "options": ["Memperkenalkan topik baharu", "Merumuskan isi dan memberi pandangan akhir", "Menyenaraikan semua isi", "Menulis dialog"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Karangan dialog ditulis dalam bentuk:", "options": ["Prosa biasa", "Perbualan antara dua atau lebih penutur", "Puisi berima", "Laporan", "Surat"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Ciri utama karangan perbahasan ialah:", "options": ["Menggunakan bahasa puitis", "Mempunyai hujah yang logik dan bukti yang kukuh", "Ditulis dalam bentuk cerita", "Mengandungi gambar rajah"], "correct_index": 1, "language": "bm", "difficulty": 2}
+      ]
+    },
+    {
+      "subject_name_bm": "Bahasa Melayu",
+      "topic": "Karangan Jenis Perbahasan",
+      "profile": "Campuran",
+      "questions": [
+        {"question_text": "Dalam perbahasan, pihak yang menyokong usul dipanggil:", "options": ["Pembangkang", "Pencadang", "Pengerusi", "Hakim"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Apakah yang dimaksudkan dengan 'usul' dalam perbahasan?", "options": ["Tempat perbahasan", "Kenyataan atau cadangan yang diperdebatkan", "Masa yang ditetapkan", "Bilangan ahli"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Hujah yang baik dalam perbahasan MESTI:", "options": ["Menggunakan bahasa kasar", "Disokong dengan fakta, data, atau contoh yang relevan", "Menyerang peribadi lawan", "Diulang berkali-kali"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Format karangan perbahasan bermula dengan:", "options": ["Kesimpulan", "Pernyataan usul dan pendirian penulis", "Senarai fakta", "Dialog"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Bahagian sanggahan dalam perbahasan bertujuan untuk:", "options": ["Menyokong hujah pihak lawan", "Membantah dan melemahkan hujah pihak bertentangan", "Merumuskan isi", "Memperkenalkan topik"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Kata hubung yang sesuai untuk mengemukakan hujah balas ialah:", "options": ["Dan, serta, juga", "Walau bagaimanapun, sebaliknya, namun", "Oleh itu, maka, justeru", "Pertama, kedua, ketiga"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Penutup karangan perbahasan harus:", "options": ["Mengemukakan isu baharu", "Menegaskan semula pendirian dan merumuskan hujah utama", "Menceritakan kisah peribadi", "Memberi definisi semua istilah"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Manakah contoh usul perbahasan yang tepat?", "options": ["Tentang sukan", "Teknologi membawa lebih banyak keburukan berbanding kebaikan", "Saya suka belajar", "Buku adalah penting"], "correct_index": 1, "language": "bm", "difficulty": 1}
       ]
     },
     {
@@ -43,7 +56,25 @@
         {"question_text": "Apakah mod bagi set data: 2, 3, 3, 5, 7, 3, 8?", "options": ["3", "5", "2", "7"], "correct_index": 0, "language": "bm", "difficulty": 1},
         {"question_text": "Cari median bagi: 1, 3, 5, 7, 9", "options": ["3", "5", "7", "9"], "correct_index": 1, "language": "bm", "difficulty": 1},
         {"question_text": "Median bagi set data 2, 4, 6, 8 ialah?", "options": ["4", "5", "6", "4.5"], "correct_index": 1, "language": "bm", "difficulty": 2},
-        {"question_text": "Jika min bagi 4 nombor ialah 10, jumlah keempat-empat nombor itu ialah?", "options": ["14", "40", "10", "4"], "correct_index": 1, "language": "bm", "difficulty": 2}
+        {"question_text": "Jika min bagi 4 nombor ialah 10, jumlah keempat-empat nombor itu ialah?", "options": ["14", "40", "10", "4"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Set data: 5, 8, 8, 9, 10. Apakah mod dan median?", "options": ["Mod=8, Median=8", "Mod=9, Median=8", "Mod=8, Median=9", "Mod=10, Median=9"], "correct_index": 2, "language": "bm", "difficulty": 2},
+        {"question_text": "Min bagi 3, 7, 11, 15 ialah:", "options": ["8", "9", "10", "11"], "correct_index": 2, "language": "bm", "difficulty": 1},
+        {"question_text": "Data: 12, 15, 15, 18, 20. Julat data ini ialah:", "options": ["5", "6", "7", "8"], "correct_index": 3, "language": "bm", "difficulty": 2}
+      ]
+    },
+    {
+      "subject_name_bm": "Sejarah",
+      "topic": "Bab 5 — Kemerdekaan dan Pembangunan Negara",
+      "profile": "Membaca",
+      "questions": [
+        {"question_text": "Pada tarikh berapakah Persekutuan Tanah Melayu mencapai kemerdekaan?", "options": ["31 Ogos 1957", "16 September 1963", "31 Ogos 1960", "1 Januari 1958"], "correct_index": 0, "language": "bm", "difficulty": 1},
+        {"question_text": "Siapakah Perdana Menteri pertama Malaysia?", "options": ["Tun Abdul Razak", "Tun Hussein Onn", "Tunku Abdul Rahman", "Tun Dr. Mahathir Mohamad"], "correct_index": 2, "language": "bm", "difficulty": 1},
+        {"question_text": "Malaysia ditubuhkan pada tahun?", "options": ["1957", "1960", "1963", "1965"], "correct_index": 2, "language": "bm", "difficulty": 1},
+        {"question_text": "Negara manakah yang keluar dari Malaysia pada tahun 1965?", "options": ["Sarawak", "Sabah", "Singapura", "Brunei"], "correct_index": 2, "language": "bm", "difficulty": 1},
+        {"question_text": "Slogan yang dilaungkan semasa pengisytiharan kemerdekaan ialah?", "options": ["Merdeka!", "Malaysia Boleh!", "Hidup Melayu!", "Daulat Tuanku!"], "correct_index": 0, "language": "bm", "difficulty": 1},
+        {"question_text": "Di manakah pengisytiharan kemerdekaan Tanah Melayu diadakan?", "options": ["Dataran Merdeka", "Stadium Merdeka", "Istana Negara", "Bangunan Sultan Abdul Samad"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Siapakah Yang di-Pertuan Agong pertama Malaysia?", "options": ["Sultan Hisamuddin", "Tuanku Abdul Halim", "Tuanku Abdul Rahman", "Sultan Ismail Nasiruddin"], "correct_index": 2, "language": "bm", "difficulty": 2},
+        {"question_text": "Rancangan pembangunan pertama Malaysia yang dilancarkan selepas merdeka dikenali sebagai?", "options": ["Dasar Ekonomi Baru", "Rancangan Malaya Pertama", "Wawasan 2020", "Dasar Pandang ke Timur"], "correct_index": 1, "language": "bm", "difficulty": 2}
       ]
     },
     {
@@ -55,7 +86,160 @@
         {"question_text": "Akhbar manakah yang penting dalam menyemai semangat nasionalisme Melayu?", "options": ["The Star", "Al-Imam", "New Straits Times", "Berita Harian"], "correct_index": 1, "language": "bm", "difficulty": 2},
         {"question_text": "Kesatuan Melayu Muda (KMM) ditubuhkan pada tahun?", "options": ["1938", "1945", "1957", "1963"], "correct_index": 0, "language": "bm", "difficulty": 2},
         {"question_text": "Faktor utama kebangkitan nasionalisme ialah?", "options": ["Penjajahan kuasa Barat", "Pertanian", "Perdagangan rempah", "Pelancongan"], "correct_index": 0, "language": "bm", "difficulty": 1},
-        {"question_text": "Tokoh nasionalis yang menubuhkan KMM ialah?", "options": ["Ibrahim Yaacob", "Tunku Abdul Rahman", "Tun Tan Cheng Lock", "Onn Jaafar"], "correct_index": 0, "language": "bm", "difficulty": 2}
+        {"question_text": "Tokoh nasionalis yang menubuhkan KMM ialah?", "options": ["Ibrahim Yaacob", "Tunku Abdul Rahman", "Tun Tan Cheng Lock", "Onn Jaafar"], "correct_index": 0, "language": "bm", "difficulty": 2},
+        {"question_text": "UMNO ditubuhkan pada tahun?", "options": ["1945", "1946", "1948", "1950"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Penubuhan Parti Kebangsaan Melayu Bersatu (UMNO) dipelopori oleh?", "options": ["Tunku Abdul Rahman", "Dato Onn Jaafar", "Abdul Razak", "Tun Hussein Onn"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Malayan Union ditentang kerana?", "options": ["Mengurangkan kuasa raja-raja Melayu", "Meningkatkan cukai", "Menutup sekolah Melayu", "Menghalang perdagangan"], "correct_index": 0, "language": "bm", "difficulty": 2}
+      ]
+    },
+    {
+      "subject_name_bm": "Geografi",
+      "topic": "Bentuk Muka Bumi Malaysia",
+      "profile": "Membaca",
+      "questions": [
+        {"question_text": "Apakah bentuk muka bumi yang paling luas di Malaysia?", "options": ["Tanah tinggi", "Dataran rendah", "Banjaran gunung", "Pantai"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Banjaran gunung terpanjang di Semenanjung Malaysia ialah?", "options": ["Banjaran Titiwangsa", "Banjaran Tahan", "Banjaran Bintang", "Banjaran Keledang"], "correct_index": 0, "language": "bm", "difficulty": 1},
+        {"question_text": "Gunung tertinggi di Malaysia ialah?", "options": ["Gunung Tahan", "Gunung Kinabalu", "Gunung Mulu", "Gunung Ledang"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Dataran rendah di Malaysia kebanyakannya terbentuk akibat?", "options": ["Letusan gunung berapi", "Mendapan sungai dan ombak laut", "Gempa bumi", "Angin monsun"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Kawasan tanah tinggi Cameron Highlands terletak di negeri?", "options": ["Selangor", "Perak", "Pahang", "Kelantan"], "correct_index": 2, "language": "bm", "difficulty": 1},
+        {"question_text": "Apakah kegunaan utama kawasan dataran rendah di Malaysia?", "options": ["Pelancongan sahaja", "Pertanian, petempatan dan perindustrian", "Perlombongan sahaja", "Pembalakan"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Sungai terpanjang di Malaysia Barat ialah?", "options": ["Sungai Kelantan", "Sungai Pahang", "Sungai Perak", "Sungai Rajang"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Bentuk muka bumi manakah sesuai untuk aktiviti pertanian sawah padi?", "options": ["Tanah tinggi berbukit", "Dataran rendah yang luas", "Lereng bukit yang curam", "Kawasan berpaya"], "correct_index": 1, "language": "bm", "difficulty": 1}
+      ]
+    },
+    {
+      "subject_name_bm": "Geografi",
+      "topic": "Iklim dan Cuaca di Malaysia",
+      "profile": "Membaca",
+      "questions": [
+        {"question_text": "Malaysia mengalami iklim jenis apakah?", "options": ["Iklim sederhana", "Iklim tropika khatulistiwa", "Iklim gurun", "Iklim tundra"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Suhu purata Malaysia sepanjang tahun ialah antara?", "options": ["10°C - 20°C", "20°C - 25°C", "25°C - 35°C", "35°C - 45°C"], "correct_index": 2, "language": "bm", "difficulty": 1},
+        {"question_text": "Malaysia Timur mengalami monsun timur laut pada bulan?", "options": ["Mac hingga Mei", "Jun hingga Ogos", "November hingga Mac", "April hingga Julai"], "correct_index": 2, "language": "bm", "difficulty": 2},
+        {"question_text": "Apakah faktor yang menyebabkan Malaysia menerima hujan lebat sepanjang tahun?", "options": ["Kedudukan berhampiran khatulistiwa dan lautan", "Kawasan bergunung-ganang sahaja", "Angin monsun sahaja", "Aktiviti manusia"], "correct_index": 0, "language": "bm", "difficulty": 2},
+        {"question_text": "Fenomena jerebu di Malaysia disebabkan oleh?", "options": ["Hujan lebat", "Pembakaran hutan dan aktiviti perindustrian", "Angin kencang", "Gempa bumi"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Musim tengkujuh di Pantai Timur Semenanjung berlaku ketika?", "options": ["Monsun Barat Daya", "Monsun Timur Laut", "Musim peralihan", "Musim panas"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Hujan perolakan di Malaysia biasanya berlaku pada waktu?", "options": ["Pagi hari", "Tengah hari hingga petang", "Tengah malam", "Waktu subuh"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Kawasan yang menerima hujan paling sedikit di Malaysia ialah?", "options": ["Pantai Timur", "Kawasan bayangan hujan di sebalik banjaran gunung", "Kawasan pesisiran pantai", "Kawasan bandar"], "correct_index": 1, "language": "bm", "difficulty": 2}
+      ]
+    },
+    {
+      "subject_name_bm": "Pendidikan Islam",
+      "topic": "Akhlak Mahmudah dalam Kehidupan",
+      "profile": "Membaca",
+      "questions": [
+        {"question_text": "Apakah maksud akhlak mahmudah?", "options": ["Akhlak yang buruk", "Akhlak yang terpuji dan mulia", "Akhlak yang sederhana", "Akhlak yang dilarang"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Manakah antara berikut merupakan contoh akhlak mahmudah?", "options": ["Sombong dan angkuh", "Jujur, amanah dan ikhlas", "Dengki dan iri hati", "Malas dan cuai"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Sifat amanah bermaksud?", "options": ["Boleh dipercayai dan melaksanakan tanggungjawab dengan jujur", "Suka bercakap banyak", "Sering meminta bantuan", "Pandai berdebat"], "correct_index": 0, "language": "bm", "difficulty": 1},
+        {"question_text": "Dalil yang menggalakkan umat Islam berakhlak mulia ialah hadis:", "options": ["Hadis tentang solat", "Hadis yang menyebut bahawa orang mukmin yang paling sempurna imannya ialah yang paling baik akhlaknya", "Hadis tentang puasa", "Hadis tentang zakat"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Sifat tawaduk bermaksud?", "options": ["Angkuh dan membesarkan diri", "Merendah diri dan tidak sombong", "Suka pamer kekayaan", "Tidak menghormati orang lain"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Manfaat berakhlak mahmudah kepada individu ialah?", "options": ["Mendapat harta yang banyak", "Dihormati, disenangi orang dan mendapat keberkatan Allah", "Menjadi terkenal di dunia sahaja", "Bebas daripada semua masalah"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Akhlak mahmudah yang ditunjukkan semasa bercakap ialah?", "options": ["Berkata-kata kasar", "Berkata benar, lembut dan sopan santun", "Memotong percakapan orang lain", "Bercakap perlahan sahaja"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Sifat sabar dalam Islam bermaksud?", "options": ["Tidak melakukan apa-apa", "Menahan diri daripada sifat marah, mengeluh dan putus asa", "Sentiasa menangis", "Tidak peduli dengan masalah"], "correct_index": 1, "language": "bm", "difficulty": 2}
+      ]
+    },
+    {
+      "subject_name_bm": "Pendidikan Islam",
+      "topic": "Fardhu Ain — Solat dan Puasa",
+      "profile": "Membaca",
+      "questions": [
+        {"question_text": "Berapakah bilangan rakaat solat Subuh?", "options": ["2 rakaat", "3 rakaat", "4 rakaat", "5 rakaat"], "correct_index": 0, "language": "bm", "difficulty": 1},
+        {"question_text": "Solat fardhu yang dilakukan pada waktu tengah hari ialah?", "options": ["Subuh", "Zuhur", "Asar", "Maghrib"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Jumlah rakaat solat Isyak ialah?", "options": ["2 rakaat", "3 rakaat", "4 rakaat", "5 rakaat"], "correct_index": 2, "language": "bm", "difficulty": 1},
+        {"question_text": "Syarat wajib puasa Ramadan ialah KECUALI:", "options": ["Islam", "Baligh", "Berakal", "Kaya"], "correct_index": 3, "language": "bm", "difficulty": 2},
+        {"question_text": "Niat puasa Ramadan dilakukan pada waktu?", "options": ["Sebelum terbit fajar (sebelum Subuh)", "Selepas solat Subuh", "Waktu Zuhur", "Waktu berbuka"], "correct_index": 0, "language": "bm", "difficulty": 2},
+        {"question_text": "Antara perkara yang membatalkan puasa ialah?", "options": ["Tidur pada siang hari", "Makan dan minum dengan sengaja", "Berendam dalam air", "Mencium bau makanan"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Waktu berbuka puasa ialah apabila?", "options": ["Matahari terbit", "Matahari terbenam (masuk waktu Maghrib)", "Tengah hari", "Waktu Asar"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Rukun solat yang pertama ialah?", "options": ["Membaca Al-Fatihah", "Berdiri tegak (bagi yang mampu)", "Niat", "Takbiratul ihram"], "correct_index": 2, "language": "bm", "difficulty": 2}
+      ]
+    },
+    {
+      "subject_name_bm": "Fizik",
+      "topic": "Daya dan Tekanan",
+      "profile": "Menulis",
+      "questions": [
+        {"question_text": "Formula tekanan ialah?", "options": ["P = F × A", "P = F / A", "P = A / F", "P = F + A"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Unit SI bagi tekanan ialah?", "options": ["Newton (N)", "Pascal (Pa)", "Joule (J)", "Watt (W)"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Satu daya 50 N bertindak ke atas luas permukaan 2 m². Tekanannya ialah?", "options": ["100 Pa", "25 Pa", "52 Pa", "48 Pa"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Mengapa pisau yang tajam lebih mudah memotong berbanding pisau yang tumpul?", "options": ["Daya lebih besar", "Luas permukaan lebih kecil menyebabkan tekanan lebih tinggi", "Pisau tajam lebih ringan", "Geseran lebih kecil"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Prinsip Pascal menyatakan bahawa tekanan yang dikenakan ke atas bendalir:", "options": ["Berkurang dengan kedalaman", "Disebarkan sama rata ke semua arah", "Hanya bertindak ke bawah", "Bergantung kepada suhu"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Tekanan hidrostatic bertambah apabila?", "options": ["Suhu meningkat", "Kedalaman meningkat", "Luas permukaan meningkat", "Halaju meningkat"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "1 Pascal bersamaan dengan?", "options": ["1 N/m", "1 N/m²", "1 kg/m²", "1 J/m"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Jika tekanan ialah 200 Pa dan luas permukaan ialah 4 m², berapakah daya yang bertindak?", "options": ["50 N", "800 N", "196 N", "204 N"], "correct_index": 1, "language": "bm", "difficulty": 2}
+      ]
+    },
+    {
+      "subject_name_bm": "Fizik",
+      "topic": "Daya dan Hukum Newton",
+      "profile": "Menulis",
+      "questions": [
+        {"question_text": "Hukum Newton pertama menyatakan bahawa objek akan kekal dalam keadaan pegun atau bergerak seragam melainkan?", "options": ["Ia terlalu berat", "Daya luar bertindak ke atasnya", "Cuaca berubah", "Permukaan kasar"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Formula Hukum Newton Kedua ialah?", "options": ["F = m/a", "F = ma", "F = m + a", "F = a/m"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Jika jisim objek ialah 5 kg dan pecutan ialah 3 m/s², berapakah daya paduan?", "options": ["8 N", "15 N", "1.67 N", "2 N"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Hukum Newton Ketiga menyatakan bahawa setiap tindakan mempunyai?", "options": ["Separuh tindak balas", "Tindak balas yang sama besar dan bertentangan arah", "Tindak balas yang lebih kecil", "Tiada tindak balas"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Unit bagi daya ialah?", "options": ["Kilogram (kg)", "Newton (N)", "Meter (m)", "Joule (J)"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Sifat inersia bermaksud?", "options": ["Keupayaan objek untuk bergerak laju", "Kecenderungan objek untuk mengekalkan keadaan asal (pegun atau bergerak)", "Berat sesuatu objek", "Halaju maksimum objek"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Objek dengan jisim lebih besar mempunyai inersia yang?", "options": ["Lebih kecil", "Lebih besar", "Sama sahaja", "Tidak berkaitan"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Jika daya paduan ke atas objek ialah sifar, objek tersebut:", "options": ["Mesti pegun", "Mesti bergerak laju", "Pegun atau bergerak dengan halaju seragam", "Berhenti serta-merta"], "correct_index": 2, "language": "bm", "difficulty": 2}
+      ]
+    },
+    {
+      "subject_name_bm": "Kimia",
+      "topic": "Ikatan Kimia dan Struktur Sebatian",
+      "profile": "Menulis",
+      "questions": [
+        {"question_text": "Ikatan kimia yang terbentuk antara logam dan bukan logam ialah?", "options": ["Ikatan kovalen", "Ikatan ion", "Ikatan hidrogen", "Ikatan metalik"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Ikatan kovalen terbentuk melalui?", "options": ["Pemindahan elektron", "Penggunaan bersama pasangan elektron", "Tarikan antara ion", "Pergerakan elektron bebas"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Sebatian ion larut dalam air menghasilkan?", "options": ["Gas", "Larutan yang boleh mengkonduksi elektrik", "Mendakan", "Tiada perubahan"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Formula kimia bagi natrium klorida (garam biasa) ialah?", "options": ["NaCl", "NaOH", "Na₂O", "NaCO₃"], "correct_index": 0, "language": "bm", "difficulty": 1},
+        {"question_text": "Ikatan kovalen dalam molekul H₂O melibatkan penggunaan bersama berapa pasangan elektron?", "options": ["1 pasangan", "2 pasangan", "3 pasangan", "4 pasangan"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Sifat umum sebatian ion ialah KECUALI:", "options": ["Takat lebur tinggi", "Keras tetapi rapuh", "Tidak mengkonduksi elektrik dalam keadaan pepejal", "Berwujud sebagai gas pada suhu bilik"], "correct_index": 3, "language": "bm", "difficulty": 2},
+        {"question_text": "Elektron yang terlibat dalam ikatan kimia ialah elektron?", "options": ["Elektron dalam nukleus", "Elektron valens (elektron di lapisan terluar)", "Semua elektron", "Elektron di lapisan pertama"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Sebatian kovalen biasanya?", "options": ["Mempunyai takat lebur tinggi", "Tidak mengkonduksi elektrik", "Larut dalam air sahaja", "Berwarna-warni"], "correct_index": 1, "language": "bm", "difficulty": 2}
+      ]
+    },
+    {
+      "subject_name_bm": "Kimia",
+      "topic": "Asid, Bes dan Garam",
+      "profile": "Menulis",
+      "questions": [
+        {"question_text": "pH larutan asid adalah?", "options": ["Lebih daripada 7", "Sama dengan 7", "Kurang daripada 7", "Sentiasa 0"], "correct_index": 2, "language": "bm", "difficulty": 1},
+        {"question_text": "Apakah yang terhasil apabila asid bertindak balas dengan bes?", "options": ["Gas hidrogen dan air", "Garam dan air (tindak balas peneutralan)", "Oksigen dan karbon dioksida", "Hanya garam sahaja"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Contoh asid yang terdapat dalam buah limau ialah?", "options": ["Asid sulfurik", "Asid hidroklorik", "Asid sitrik", "Asid nitrik"], "correct_index": 2, "language": "bm", "difficulty": 1},
+        {"question_text": "Formula bagi asid hidroklorik ialah?", "options": ["H₂SO₄", "HCl", "HNO₃", "H₃PO₄"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Nilai pH larutan neutral ialah?", "options": ["0", "7", "14", "10"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Apabila asid sulfurik bertindak balas dengan natrium hidroksida, garam yang terhasil ialah?", "options": ["Natrium klorida", "Natrium sulfat", "Natrium nitrat", "Natrium karbonat"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Indikator yang bertukar merah dalam larutan asid ialah?", "options": ["Kertas litmus biru", "Kertas litmus merah", "Fenolftalein", "Metil jingga dalam bes"], "correct_index": 0, "language": "bm", "difficulty": 2},
+        {"question_text": "Tindak balas antara asid dan logam menghasilkan?", "options": ["Garam dan oksigen", "Garam dan gas hidrogen", "Air dan karbon dioksida", "Bes dan air"], "correct_index": 1, "language": "bm", "difficulty": 2}
+      ]
+    },
+    {
+      "subject_name_bm": "Biologi",
+      "topic": "Sistem Respirasi Manusia",
+      "profile": "Campuran",
+      "questions": [
+        {"question_text": "Organ utama sistem respirasi manusia ialah?", "options": ["Jantung", "Paru-paru", "Hati", "Buah pinggang"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Gas apakah yang diserap masuk ke dalam darah semasa respirasi?", "options": ["Karbon dioksida", "Nitrogen", "Oksigen", "Wap air"], "correct_index": 2, "language": "bm", "difficulty": 1},
+        {"question_text": "Pertukaran gas dalam paru-paru berlaku di?", "options": ["Trakea", "Bronkus", "Alveolus", "Diafragma"], "correct_index": 2, "language": "bm", "difficulty": 1},
+        {"question_text": "Semasa menyedut nafas (inhalasi), diafragma?", "options": ["Melengkung ke atas", "Mendatar ke bawah (mengecut)", "Tidak bergerak", "Bergetar"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Apakah fungsi cilia dalam saluran pernafasan?", "options": ["Menyerap oksigen", "Menolak habuk dan bakteria keluar dari saluran pernafasan", "Menghasilkan bunyi", "Memindahkan karbon dioksida"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Respirasi sel menghasilkan?", "options": ["Oksigen dan glukosa", "ATP (tenaga), karbon dioksida dan air", "Protein dan lemak", "Hormon dan enzim"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Kadar pernafasan normal manusia dewasa semasa rehat ialah?", "options": ["5-8 kali seminit", "12-20 kali seminit", "30-40 kali seminit", "50-60 kali seminit"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Merokok merosakkan sistem respirasi kerana?", "options": ["Meningkatkan pengambilan oksigen", "Tar menyumbat alveolus dan nikotin merosakkan tisu paru-paru", "Mengurangkan karbon dioksida dalam badan", "Mempercepatkan pernafasan"], "correct_index": 1, "language": "bm", "difficulty": 2}
+      ]
+    },
+    {
+      "subject_name_bm": "Biologi",
+      "topic": "Sistem Penghadaman Manusia",
+      "profile": "Campuran",
+      "questions": [
+        {"question_text": "Apakah organ pertama dalam sistem penghadaman?", "options": ["Perut", "Mulut", "Esofagus", "Usus kecil"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Enzim yang terdapat dalam air liur untuk mencernakan kanji ialah?", "options": ["Pepsin", "Amilase", "Lipase", "Tripsin"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Di manakah sebahagian besar penyerapan nutrien berlaku?", "options": ["Perut", "Usus besar", "Usus kecil", "Rektum"], "correct_index": 2, "language": "bm", "difficulty": 1},
+        {"question_text": "Apakah fungsi asid hidroklorik dalam perut?", "options": ["Mencernakan lemak", "Membunuh bakteria dan mengaktifkan pepsin", "Menyerap air", "Menghasilkan tenaga"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Organ apakah yang menghasilkan hempedu untuk mencernakan lemak?", "options": ["Pankreas", "Perut", "Hati", "Usus besar"], "correct_index": 2, "language": "bm", "difficulty": 2},
+        {"question_text": "Vili dalam usus kecil berfungsi untuk?", "options": ["Menghasilkan enzim sahaja", "Meningkatkan luas permukaan untuk penyerapan nutrien", "Menyimpan air", "Mengeluarkan sisa"], "correct_index": 1, "language": "bm", "difficulty": 2},
+        {"question_text": "Proses manakah yang berlaku dalam usus besar?", "options": ["Pencernaan protein", "Penyerapan air dan pembentukan feses", "Penyerapan glukosa", "Penghasilan enzim"], "correct_index": 1, "language": "bm", "difficulty": 1},
+        {"question_text": "Enzim pepsin dalam perut berfungsi untuk mencernakan?", "options": ["Karbohidrat", "Lemak", "Protein", "Vitamin"], "correct_index": 2, "language": "bm", "difficulty": 1}
       ]
     }
   ]
