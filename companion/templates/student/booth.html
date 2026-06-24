@@ -6,14 +6,15 @@
   <title>StudyAid — Booth</title>
   <style>
     :root {
-      --navy:  #0B1D3A;
-      --teal:  #0D7C7C;
-      --ice:   #9BB5CC;
-      --slate: #5A7080;
-      --white: #FFFFFF;
-      --good:  #22c55e;
-      --warn:  #f59e0b;
-      --danger:#ef4444;
+      --navy:   #0B1D3A;
+      --teal:   #0D7C7C;
+      --teal2:  #0fa8a8;
+      --ice:    #9BB5CC;
+      --slate:  #5A7080;
+      --white:  #FFFFFF;
+      --good:   #22c55e;
+      --warn:   #f59e0b;
+      --danger: #ef4444;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -26,223 +27,269 @@
       color: var(--white);
     }
 
+    /* ── Canvas particle background ─────────────────────────────────────── */
+    #particle-canvas {
+      position: fixed; inset: 0;
+      z-index: 0; pointer-events: none;
+    }
+
+    /* ── Animated gradient overlay (live state colour shift) ─────────────── */
+    #bg-overlay {
+      position: fixed; inset: 0; z-index: 0;
+      transition: background 2s ease;
+      pointer-events: none;
+    }
+
     /* ── Screens ─────────────────────────────────────────────────────────── */
     .screen {
-      position: absolute; inset: 0;
+      position: absolute; inset: 0; z-index: 1;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       padding: 2.5rem;
       opacity: 0; pointer-events: none;
-      transition: opacity 0.6s ease;
+      transition: opacity 0.7s ease;
     }
     .screen.active { opacity: 1; pointer-events: auto; }
 
-    /* ── IDLE screen ────────────────────────────────────────────────────── */
-    #screen-idle { gap: 1.5rem; }
-
-    .logo-mark {
-      width: 180px; height: 180px;
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      overflow: hidden;
-      box-shadow: 0 0 60px rgba(13,124,124,0.4);
-      animation: pulse-glow 3s ease-in-out infinite;
+    /* ── Exit button ─────────────────────────────────────────────────────── */
+    .exit-btn {
+      position: fixed; top: 1rem; right: 1rem; z-index: 999;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(155,181,204,0.2);
+      border-radius: 10px; padding: .5rem 1rem;
+      color: var(--ice); font-size: 1rem; font-weight: 600;
+      cursor: pointer; text-decoration: none;
+      transition: background .2s;
+      display: flex; align-items: center; gap: .4rem;
+      backdrop-filter: blur(8px);
     }
-    .logo-mark img { width: 100%; height: 100%; object-fit: cover; }
-    @keyframes pulse-glow {
-      0%,100% { box-shadow: 0 0 40px rgba(13,124,124,0.3); }
-      50%      { box-shadow: 0 0 80px rgba(13,124,124,0.6); }
-    }
-
-    .idle-title {
-      font-size: 4rem; font-weight: 700;
-      color: var(--white); letter-spacing: -0.02em;
-    }
-    .idle-subtitle {
-      font-size: 1.6rem; color: var(--ice);
-      text-align: center; max-width: 480px; line-height: 1.5;
-    }
-    .idle-hint {
-      margin-top: 1rem;
-      font-size: 1.2rem; color: var(--slate);
-      animation: blink 2.5s ease-in-out infinite;
-    }
-    @keyframes blink { 0%,100%{opacity:.4} 50%{opacity:1} }
+    .exit-btn:hover { background: rgba(255,255,255,0.15); color: var(--white); }
 
     .footer-tag {
       position: absolute; bottom: 1.5rem;
       font-size: 0.9rem; color: var(--slate); letter-spacing: .05em;
     }
 
-    /* Exit button — always visible top-right corner */
-    .exit-btn {
-      position: fixed; top: 1rem; right: 1rem; z-index: 999;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(155,181,204,0.25);
-      border-radius: 10px; padding: .5rem 1rem;
-      color: var(--ice); font-size: 1rem; font-weight: 600;
-      cursor: pointer; text-decoration: none;
-      transition: background .2s;
-      display: flex; align-items: center; gap: .4rem;
-    }
-    .exit-btn:hover { background: rgba(255,255,255,0.18); color: var(--white); }
+    /* ════════════════════════════════════════════════════════════════════════
+       IDLE SCREEN
+    ════════════════════════════════════════════════════════════════════════ */
+    #screen-idle { gap: 2rem; }
 
-    /* ── WELCOME screen ──────────────────────────────────────────────────── */
+    .logo-mark {
+      width: 180px; height: 180px; border-radius: 50%;
+      overflow: hidden;
+      box-shadow: 0 0 0 0 rgba(13,124,124,0.5);
+      animation: logo-pulse 2.8s ease-in-out infinite;
+    }
+    .logo-mark img { width: 100%; height: 100%; object-fit: cover; }
+    @keyframes logo-pulse {
+      0%,100% { box-shadow: 0 0 40px 5px rgba(13,124,124,0.3); transform: scale(1); }
+      50%      { box-shadow: 0 0 80px 20px rgba(13,124,124,0.5); transform: scale(1.04); }
+    }
+
+    .idle-title {
+      font-size: 4.5rem; font-weight: 800;
+      background: linear-gradient(135deg, #ffffff 40%, #0D7C7C 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -0.02em; line-height: 1;
+    }
+
+    .idle-subtitle {
+      font-size: 1.5rem; color: var(--ice);
+      text-align: center; max-width: 560px; line-height: 1.5;
+    }
+
+    /* Typewriter tagline */
+    .typewriter-wrap {
+      display: flex; align-items: center; gap: .5rem;
+      margin-top: .5rem;
+    }
+    .typewriter-text {
+      font-size: 1.2rem; color: var(--teal2); font-weight: 600;
+      min-height: 1.6rem;
+    }
+    .typewriter-cursor {
+      display: inline-block; width: 2px; height: 1.4rem;
+      background: var(--teal2); margin-left: 2px;
+      animation: blink-cursor .7s step-end infinite;
+    }
+    @keyframes blink-cursor { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    .idle-hint {
+      font-size: 1.1rem; color: rgba(155,181,204,0.5);
+      animation: fade-pulse 2.5s ease-in-out infinite;
+      margin-top: .5rem;
+    }
+    @keyframes fade-pulse { 0%,100%{opacity:.4} 50%{opacity:.9} }
+
+    /* ════════════════════════════════════════════════════════════════════════
+       WELCOME SCREEN
+    ════════════════════════════════════════════════════════════════════════ */
     #screen-welcome {
       flex-direction: column; gap: 0;
-      background: linear-gradient(160deg, #0B1D3A 60%, #0f2d2d 100%);
+      background: linear-gradient(160deg,
+        rgba(11,29,58,0.85) 60%,
+        rgba(13,60,60,0.85) 100%);
+      backdrop-filter: blur(4px);
     }
 
     .welcome-top {
-      width: 100%; display: flex;
-      flex-direction: column; align-items: flex-start;
-      padding: 0 1rem 1.5rem;
-      border-bottom: 1px solid rgba(155,181,204,0.15);
+      width: 100%; padding: 0 1rem 1.5rem;
+      border-bottom: 1px solid rgba(155,181,204,0.12);
       margin-bottom: 1.5rem;
     }
     .welcome-hi {
       font-size: 5rem; font-weight: 800; line-height: 1;
       color: var(--white); letter-spacing: -0.02em;
     }
-    .welcome-hi span { color: var(--teal); }
+    .welcome-hi .name-span { color: var(--teal2); }
     .welcome-subtitle {
-      font-size: 1.4rem; color: var(--ice); margin-top: .4rem;
+      font-size: 1.3rem; color: var(--ice); margin-top: .5rem;
     }
 
+    /* Glassmorphism cards */
     .welcome-grid {
       width: 100%; display: grid;
       grid-template-columns: 1fr 1fr 1fr;
       gap: 1.25rem; padding: 0 1rem;
     }
-
     .wcard {
-      background: rgba(255,255,255,0.05);
+      background: rgba(255,255,255,0.06);
       border: 1px solid rgba(155,181,204,0.15);
-      border-radius: 16px;
-      padding: 1.25rem 1.5rem;
-      display: flex; flex-direction: column; gap: .5rem;
+      border-radius: 20px;
+      padding: 1.4rem 1.6rem;
+      display: flex; flex-direction: column; gap: .6rem;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+      /* fly-in animation — set per card in JS */
+      transform: translateY(60px); opacity: 0;
+      transition: transform 0.5s cubic-bezier(.22,1.2,.36,1),
+                  opacity 0.4s ease;
     }
+    .wcard.visible { transform: translateY(0); opacity: 1; }
+
     .wcard-label {
-      font-size: 1rem; font-weight: 700; letter-spacing: .08em;
-      color: var(--teal); text-transform: uppercase;
-    }
-    .wcard-title {
-      font-size: 1.2rem; font-weight: 600; color: var(--white);
+      font-size: 1rem; font-weight: 700; letter-spacing: .07em;
+      color: var(--teal2); text-transform: uppercase;
     }
 
-    /* Today's plan */
-    .plan-list { list-style: none; display: flex; flex-direction: column; gap: .4rem; }
-    .plan-item {
-      display: flex; align-items: center; gap: .6rem;
-      font-size: 1.1rem; color: var(--ice);
-    }
-    .plan-dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: var(--teal); flex-shrink: 0;
-    }
-    .plan-time { color: var(--slate); font-size: .85rem; min-width: 50px; }
-    .plan-empty { font-size: 1.1rem; color: var(--slate); font-style: italic; }
+    /* Plan */
+    .plan-list { list-style: none; display: flex; flex-direction: column; gap: .5rem; }
+    .plan-item { display: flex; align-items: center; gap: .7rem; font-size: 1.05rem; color: var(--ice); }
+    .plan-dot  { width: 8px; height: 8px; border-radius: 50%; background: var(--teal2); flex-shrink: 0; }
+    .plan-time { color: var(--slate); font-size: .9rem; min-width: 55px; }
+    .plan-empty { font-size: 1rem; color: var(--slate); font-style: italic; }
 
     /* Deadline */
     .deadline-days {
-      font-size: 3.8rem; font-weight: 800; color: var(--teal); line-height: 1;
+      font-size: 4rem; font-weight: 800; color: var(--teal2); line-height: 1;
+      transition: color .5s;
     }
-    .deadline-days.urgent { color: var(--warn); }
+    .deadline-days.urgent  { color: var(--warn);   animation: pulse-num 1.2s ease-in-out infinite; }
     .deadline-days.overdue { color: var(--danger); }
-    .deadline-unit { font-size: 1.1rem; color: var(--slate); }
-    .deadline-topic { font-size: 1.1rem; color: var(--ice); margin-top: .2rem; }
+    @keyframes pulse-num {
+      0%,100%{transform:scale(1)} 50%{transform:scale(1.08)}
+    }
+    .deadline-unit  { font-size: 1rem; color: var(--slate); }
+    .deadline-topic { font-size: 1rem; color: var(--ice); margin-top: .3rem; }
 
     /* Motivation */
-    .motivasi-text {
-      font-size: 1.3rem; color: var(--white); line-height: 1.5;
-      font-style: italic;
-    }
     .streak-badge {
       display: inline-flex; align-items: center; gap: .4rem;
       background: rgba(13,124,124,0.2);
       border: 1px solid var(--teal);
-      border-radius: 20px; padding: .3rem .8rem;
-      font-size: 1.3rem; color: var(--teal); font-weight: 600;
-      margin-bottom: .5rem;
+      border-radius: 20px; padding: .3rem .9rem;
+      font-size: .95rem; color: var(--teal2); font-weight: 700;
+      margin-bottom: .4rem; width: fit-content;
+    }
+    .motivasi-text {
+      font-size: 1.2rem; color: var(--white); line-height: 1.5; font-style: italic;
     }
 
-    /* ── LIVE screen ─────────────────────────────────────────────────────── */
-    #screen-live {
-      flex-direction: column; gap: 1.25rem;
-      background: var(--navy);
-    }
+    /* ════════════════════════════════════════════════════════════════════════
+       LIVE SCREEN
+    ════════════════════════════════════════════════════════════════════════ */
+    #screen-live { flex-direction: column; gap: 1.25rem; }
 
     .live-header {
       width: 100%; display: flex;
-      align-items: center; justify-content: space-between;
-      padding: 0 .5rem;
+      align-items: center; justify-content: space-between; padding: 0 .5rem;
     }
-    .live-who {
-      display: flex; flex-direction: column;
-    }
-    .live-name { font-size: 2.2rem; font-weight: 700; color: var(--white); }
-    .live-subject { font-size: 1.3rem; color: var(--teal); }
-    .live-dot-wrap { display: flex; align-items: center; gap: .5rem; }
+    .live-name    { font-size: 2.4rem; font-weight: 800; color: var(--white); }
+    .live-subject { font-size: 1.3rem; color: var(--teal2); margin-top: .1rem; }
+    .live-dot-wrap { display: flex; align-items: center; gap: .6rem; }
     .live-dot {
-      width: 12px; height: 12px; border-radius: 50%;
-      background: var(--good);
-      animation: live-pulse 1.4s ease-in-out infinite;
+      width: 14px; height: 14px; border-radius: 50%; background: var(--good);
+      animation: live-pulse 1.2s ease-in-out infinite;
     }
     @keyframes live-pulse {
-      0%,100%{opacity:1; transform:scale(1)}
-      50%    {opacity:.5; transform:scale(1.3)}
+      0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(1.4)}
     }
-    .live-status { font-size: 1.1rem; color: var(--good); font-weight: 600; }
+    .live-status { font-size: 1rem; color: var(--good); font-weight: 700; }
 
     .live-metrics {
       width: 100%; display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 1rem;
+      grid-template-columns: repeat(4, 1fr); gap: 1rem;
     }
     .metric-card {
-      background: rgba(255,255,255,0.05);
+      background: rgba(255,255,255,0.06);
       border: 1px solid rgba(155,181,204,0.12);
-      border-radius: 14px; padding: 1rem 1.25rem;
+      border-radius: 16px; padding: 1.1rem 1.3rem;
       display: flex; flex-direction: column; gap: .3rem;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
     }
     .metric-label {
-      font-size: 1rem; font-weight: 700; letter-spacing: .08em;
+      font-size: 1rem; font-weight: 700; letter-spacing: .07em;
       color: var(--slate); text-transform: uppercase;
     }
     .metric-val {
-      font-size: 3rem; font-weight: 800; color: var(--white);
-      line-height: 1;
+      font-size: 3rem; font-weight: 800; color: var(--white); line-height: 1;
+      transition: color .5s;
     }
-    .metric-unit { font-size: 1rem; color: var(--slate); }
+    .metric-unit { font-size: .85rem; color: var(--slate); }
 
     /* Focus bar */
     .focus-wrap { width: 100%; padding: 0 .5rem; }
     .focus-label {
       display: flex; justify-content: space-between;
-      font-size: 1rem; color: var(--slate); margin-bottom: .4rem;
+      font-size: .9rem; color: var(--slate); margin-bottom: .5rem;
     }
     .focus-track {
-      width: 100%; height: 10px; background: rgba(255,255,255,0.08);
-      border-radius: 5px; overflow: hidden;
+      width: 100%; height: 14px;
+      background: rgba(255,255,255,0.07);
+      border-radius: 7px; overflow: hidden;
     }
     .focus-fill {
-      height: 100%; border-radius: 5px;
-      transition: width .8s ease, background .4s;
+      height: 100%; border-radius: 7px;
+      transition: width 1s ease, background 1s ease;
     }
-    .focus-fill.good   { background: var(--good); }
-    .focus-fill.warn   { background: var(--warn); }
-    .focus-fill.danger { background: var(--danger); }
+    .focus-fill.good   { background: linear-gradient(90deg, #16a34a, #22c55e); }
+    .focus-fill.warn   { background: linear-gradient(90deg, #d97706, #f59e0b); }
+    .focus-fill.danger { background: linear-gradient(90deg, #b91c1c, #ef4444); }
 
     /* Drift log */
     .drift-section { width: 100%; padding: 0 .5rem; }
-    .drift-title { font-size: 1rem; color: var(--slate); letter-spacing: .05em;
-                   text-transform: uppercase; margin-bottom: .5rem; }
-    .drift-empty { font-size: 1rem; color: var(--slate); font-style: italic; }
-    .drift-list  { display: flex; flex-direction: column; gap: .3rem; }
-    .drift-row   { display: flex; align-items: center; gap: .6rem; font-size: .85rem; }
-    .drift-ts    { color: var(--slate); min-width: 80px; font-size: 1rem; }
+    .drift-title {
+      font-size: .9rem; color: var(--slate); letter-spacing: .06em;
+      text-transform: uppercase; margin-bottom: .6rem;
+    }
+    .drift-empty { font-size: .95rem; color: var(--slate); font-style: italic; }
+    .drift-list  { display: flex; flex-direction: column; gap: .35rem; }
+    .drift-row {
+      display: flex; align-items: center; gap: .7rem;
+      font-size: .95rem;
+      animation: slide-in-right .4s cubic-bezier(.22,1.2,.36,1);
+    }
+    @keyframes slide-in-right {
+      from { transform: translateX(40px); opacity: 0; }
+      to   { transform: translateX(0);    opacity: 1; }
+    }
+    .drift-ts    { color: var(--slate); min-width: 75px; }
     .drift-badge {
-      padding: .15rem .55rem; border-radius: 10px; font-size: 1rem; font-weight: 600;
+      padding: .2rem .6rem; border-radius: 10px;
+      font-size: .82rem; font-weight: 700;
     }
     .drift-badge.warning { background: rgba(245,158,11,.15); color: var(--warn); }
     .drift-badge.alert   { background: rgba(239,68,68,.15);  color: var(--danger); }
@@ -250,62 +297,64 @@
 </head>
 <body>
 
-  <!-- Exit button — always visible, links back to main nav -->
-  <a href="/student/" class="exit-btn" title="Keluar dari paparan booth">
-    ☰ Menu
-  </a>
+  <!-- Particle canvas -->
+  <canvas id="particle-canvas"></canvas>
+  <!-- Background overlay for live colour shift -->
+  <div id="bg-overlay"></div>
 
-  <!-- ── IDLE ───────────────────────────────────────────────────────────────── -->
+  <!-- Exit button -->
+  <a href="/student/" class="exit-btn" title="Keluar dari paparan booth">☰ Menu</a>
+
+  <!-- ── IDLE ─────────────────────────────────────────────────────────────── -->
   <div class="screen active" id="screen-idle">
-    <div class="logo-mark"><img src="/static/img/segra_logo.jpg" alt="SMK Gudang Rasau"></div>
+    <div class="logo-mark">
+      <img src="/static/img/segra_logo.jpg" alt="SMK Gudang Rasau">
+    </div>
     <div class="idle-title">StudyAid</div>
     <div class="idle-subtitle">Sistem Pemantauan Tabiat Belajar Berasaskan Pakaian Pintar</div>
+    <div class="typewriter-wrap">
+      <span class="typewriter-text" id="typewriter"></span>
+      <span class="typewriter-cursor"></span>
+    </div>
     <div class="idle-hint">Hidupkan peranti untuk bermula</div>
     <div class="footer-tag">SMK Gudang Rasau (SEGRA) · Kuantan, Pahang · v12</div>
   </div>
 
-  <!-- ── WELCOME ─────────────────────────────────────────────────────────────── -->
+  <!-- ── WELCOME ───────────────────────────────────────────────────────────── -->
   <div class="screen" id="screen-welcome">
     <div class="welcome-top">
-      <div class="welcome-hi">Hi, <span id="w-name">Pelajar</span>! 👋</div>
+      <div class="welcome-hi">
+        Hi, <span class="name-span" id="w-name">Pelajar</span>! 👋
+      </div>
       <div class="welcome-subtitle">Selamat datang ke StudyAid. Sesi anda belum bermula.</div>
     </div>
 
     <div class="welcome-grid">
-
-      <!-- Today's plan -->
-      <div class="wcard">
+      <div class="wcard" id="wcard-0">
         <div class="wcard-label">📅 Jadual Hari Ini</div>
         <ul class="plan-list" id="w-plan"></ul>
       </div>
-
-      <!-- Nearest deadline -->
-      <div class="wcard">
+      <div class="wcard" id="wcard-1">
         <div class="wcard-label">⏰ Tarikh Akhir Terdekat</div>
-        <div id="w-deadline-wrap">
-          <div class="deadline-days" id="w-days">—</div>
-          <div class="deadline-unit" id="w-days-label"></div>
-          <div class="deadline-topic" id="w-topic"></div>
-        </div>
+        <div class="deadline-days" id="w-days">—</div>
+        <div class="deadline-unit" id="w-days-label"></div>
+        <div class="deadline-topic" id="w-topic"></div>
       </div>
-
-      <!-- Motivation -->
-      <div class="wcard">
+      <div class="wcard" id="wcard-2">
         <div class="wcard-label">💪 Motivasi</div>
         <div id="w-streak-badge" class="streak-badge" style="display:none">
           🔥 <span id="w-streak-num"></span> hari berturut-turut
         </div>
         <div class="motivasi-text" id="w-motivasi"></div>
       </div>
-
     </div>
     <div class="footer-tag">SMK Gudang Rasau (SEGRA) · Kuantan, Pahang · v12</div>
   </div>
 
-  <!-- ── LIVE ───────────────────────────────────────────────────────────────── -->
+  <!-- ── LIVE ──────────────────────────────────────────────────────────────── -->
   <div class="screen" id="screen-live">
     <div class="live-header">
-      <div class="live-who">
+      <div>
         <div class="live-name" id="l-name">—</div>
         <div class="live-subject" id="l-subject">—</div>
       </div>
@@ -340,7 +389,7 @@
 
     <div class="focus-wrap">
       <div class="focus-label">
-        <span>Fokus</span>
+        <span>Tahap Fokus</span>
         <span id="l-focus-pct">0%</span>
       </div>
       <div class="focus-track">
@@ -359,87 +408,279 @@
   </div>
 
   <script>
-    // ── State machine ──────────────────────────────────────────────────────────
-    let currentState = "idle";
+  // ════════════════════════════════════════════════════════════════════════
+  // PARTICLE FIELD
+  // ════════════════════════════════════════════════════════════════════════
+  (function() {
+    const canvas = document.getElementById('particle-canvas');
+    const ctx    = canvas.getContext('2d');
+    let W, H, particles = [];
+    const N = 80, MAX_DIST = 160;
 
-    function showScreen(name) {
-      if (currentState === name) return;
-      currentState = name;
-      document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
-      document.getElementById("screen-" + name).classList.add("active");
+    function resize() {
+      W = canvas.width  = window.innerWidth;
+      H = canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    function rnd(a, b) { return a + Math.random() * (b - a); }
+
+    for (let i = 0; i < N; i++) particles.push({
+      x: rnd(0, W), y: rnd(0, H),
+      vx: rnd(-0.4, 0.4), vy: rnd(-0.4, 0.4),
+      r: rnd(1.5, 3.5), alpha: rnd(0.3, 0.9)
+    });
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+      // draw lines
+      for (let i = 0; i < N; i++) {
+        for (let j = i + 1; j < N; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const d  = Math.sqrt(dx*dx + dy*dy);
+          if (d < MAX_DIST) {
+            ctx.beginPath();
+            ctx.strokeStyle = `rgba(13,168,168,${0.15 * (1 - d/MAX_DIST)})`;
+            ctx.lineWidth = 0.8;
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.stroke();
+          }
+        }
+      }
+      // draw dots
+      particles.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+        ctx.fillStyle = `rgba(13,168,168,${p.alpha})`;
+        ctx.fill();
+        // move
+        p.x += p.vx; p.y += p.vy;
+        if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
+        if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
+      });
+      requestAnimationFrame(draw);
+    }
+    draw();
+  })();
+
+  // ════════════════════════════════════════════════════════════════════════
+  // TYPEWRITER TAGLINES
+  // ════════════════════════════════════════════════════════════════════════
+  (function() {
+    const lines = [
+      "📡 Sistem belajar pintar berasaskan pakaian...",
+      "🤖 AI mengelas profil belajar setiap topik...",
+      "⌚ Pantau tumpuan secara masa nyata...",
+      "📊 Data objektif untuk guru dan pelajar...",
+      "🎯 Kuiz drift terus di pergelangan tangan...",
+    ];
+    let li = 0, ci = 0, deleting = false;
+    const el = document.getElementById('typewriter');
+
+    function tick() {
+      const line = lines[li];
+      if (!deleting) {
+        el.textContent = line.slice(0, ++ci);
+        if (ci === line.length) { deleting = true; setTimeout(tick, 2200); return; }
+        setTimeout(tick, 45);
+      } else {
+        el.textContent = line.slice(0, --ci);
+        if (ci === 0) {
+          deleting = false;
+          li = (li + 1) % lines.length;
+          setTimeout(tick, 400);
+          return;
+        }
+        setTimeout(tick, 22);
+      }
+    }
+    setTimeout(tick, 800);
+  })();
+
+  // ════════════════════════════════════════════════════════════════════════
+  // ANIMATED NUMBER COUNTER
+  // ════════════════════════════════════════════════════════════════════════
+  function animateNum(el, from, to, duration=600) {
+    if (from === to) return;
+    const start = performance.now();
+    function step(now) {
+      const t = Math.min((now - start) / duration, 1);
+      el.textContent = Math.round(from + (to - from) * t);
+      if (t < 1) requestAnimationFrame(step);
+      else el.textContent = to;
+    }
+    requestAnimationFrame(step);
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // STATE MACHINE
+  // ════════════════════════════════════════════════════════════════════════
+  let currentState   = 'idle';
+  let prevFocus      = 0;
+  let prevDrift      = 0;
+  let prevQuiz       = 0;
+  let lastDriftLog   = [];
+
+  function showScreen(name) {
+    if (currentState === name) return;
+    currentState = name;
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('screen-' + name).classList.add('active');
+
+    // Particles visible on idle, dimmed on others
+    const canvas = document.getElementById('particle-canvas');
+    canvas.style.opacity = name === 'idle' ? '1' : '0.25';
+
+    // Background overlay reset
+    if (name !== 'live') {
+      document.getElementById('bg-overlay').style.background = 'transparent';
     }
 
-    // ── Render welcome ─────────────────────────────────────────────────────────
-    function renderWelcome(d) {
-      document.getElementById("w-name").textContent = d.first_name;
+    // Fly-in cards on welcome
+    if (name === 'welcome') {
+      ['wcard-0','wcard-1','wcard-2'].forEach((id, i) => {
+        const el = document.getElementById(id);
+        el.classList.remove('visible');
+        setTimeout(() => el.classList.add('visible'), 150 + i * 120);
+      });
+    }
+  }
 
-      // Today's plan
-      const planEl = document.getElementById("w-plan");
-      planEl.innerHTML = "";
-      if (d.today_plan && d.today_plan.length > 0) {
-        d.today_plan.forEach(p => {
-          const li = document.createElement("li");
-          li.className = "plan-item";
-          li.innerHTML =
-            `<span class="plan-dot"></span>` +
-            `<span class="plan-time">${p.time}</span>` +
-            `<span>${p.subject} <span style="color:var(--slate);font-size:.82rem">(${p.dur} min)</span></span>`;
-          planEl.appendChild(li);
-        });
-      } else {
-        planEl.innerHTML = `<li class="plan-empty">Tiada jadual hari ini</li>`;
+  // ════════════════════════════════════════════════════════════════════════
+  // TYPEWRITER NAME (welcome)
+  // ════════════════════════════════════════════════════════════════════════
+  let nameTwTimeout = null;
+  function typewriterName(name, el) {
+    clearTimeout(nameTwTimeout);
+    el.textContent = '';
+    let i = 0;
+    function tick() {
+      if (i <= name.length) {
+        el.textContent = name.slice(0, i++);
+        nameTwTimeout = setTimeout(tick, 60);
       }
+    }
+    tick();
+  }
 
-      // Deadline
-      const daysEl  = document.getElementById("w-days");
-      const labelEl = document.getElementById("w-days-label");
-      const topicEl = document.getElementById("w-topic");
-      if (d.deadline) {
-        daysEl.textContent = d.deadline.days;
-        daysEl.className   = "deadline-days" +
-          (d.deadline.days <= 3 ? " urgent" : d.deadline.days < 0 ? " overdue" : "");
-        labelEl.textContent = d.deadline.days === 1 ? "hari lagi" : "hari lagi";
-        topicEl.textContent = `${d.deadline.subject} — ${d.deadline.topic}`;
-      } else {
-        daysEl.textContent  = "✓";
-        labelEl.textContent = "";
-        topicEl.textContent = "Tiada tarikh akhir mendesak";
-      }
-
-      // Motivation / streak
-      const badgeEl = document.getElementById("w-streak-badge");
-      if (d.streak > 0) {
-        badgeEl.style.display = "inline-flex";
-        document.getElementById("w-streak-num").textContent = d.streak;
-      } else {
-        badgeEl.style.display = "none";
-      }
-      document.getElementById("w-motivasi").textContent = d.motivasi;
-
-      showScreen("welcome");
+  // ════════════════════════════════════════════════════════════════════════
+  // RENDER WELCOME
+  // ════════════════════════════════════════════════════════════════════════
+  let lastWelcomeName = '';
+  function renderWelcome(d) {
+    const nameEl = document.getElementById('w-name');
+    if (d.first_name !== lastWelcomeName) {
+      lastWelcomeName = d.first_name;
+      typewriterName(d.first_name, nameEl);
     }
 
-    // ── Render live ────────────────────────────────────────────────────────────
-    function renderLive(d) {
-      document.getElementById("l-name").textContent    = d.student_name;
-      document.getElementById("l-subject").textContent = d.subject;
-      document.getElementById("l-elapsed").textContent =
-        `${d.elapsed_min}:${String(d.elapsed_sec).padStart(2,"0")}`;
-      document.getElementById("l-focus").textContent  = d.focus_score;
-      document.getElementById("l-drift").textContent  = d.drift_count;
-      document.getElementById("l-quiz").textContent   = d.quiz_count;
+    // Today's plan
+    const planEl = document.getElementById('w-plan');
+    planEl.innerHTML = '';
+    if (d.today_plan && d.today_plan.length > 0) {
+      d.today_plan.forEach(p => {
+        const li = document.createElement('li');
+        li.className = 'plan-item';
+        li.innerHTML =
+          `<span class="plan-dot"></span>` +
+          `<span class="plan-time">${p.time}</span>` +
+          `<span>${p.subject} <span style="color:var(--slate);font-size:.88rem">(${p.dur} min)</span></span>`;
+        planEl.appendChild(li);
+      });
+    } else {
+      planEl.innerHTML = `<li class="plan-empty">Tiada jadual hari ini — belajar bebas!</li>`;
+    }
 
-      // Focus bar
-      const pct    = Math.min(d.focus_score, 100);
-      const barEl  = document.getElementById("l-focus-bar");
-      const pctEl  = document.getElementById("l-focus-pct");
-      barEl.style.width = pct + "%";
-      barEl.className   = "focus-fill " +
-        (pct >= 70 ? "good" : pct >= 40 ? "warn" : "danger");
-      pctEl.textContent = pct + "%";
+    // Deadline
+    const daysEl  = document.getElementById('w-days');
+    const labelEl = document.getElementById('w-days-label');
+    const topicEl = document.getElementById('w-topic');
+    if (d.deadline) {
+      daysEl.textContent  = d.deadline.days;
+      daysEl.className    = 'deadline-days' +
+        (d.deadline.days <= 3 ? ' urgent' : d.deadline.days < 0 ? ' overdue' : '');
+      labelEl.textContent = d.deadline.days === 1 ? 'hari lagi' : 'hari lagi';
+      topicEl.textContent = `${d.deadline.subject} — ${d.deadline.topic}`;
+    } else {
+      daysEl.textContent  = '✓';
+      daysEl.className    = 'deadline-days';
+      labelEl.textContent = '';
+      topicEl.textContent = 'Tiada tarikh akhir mendesak';
+    }
 
-      // Drift log
-      const logEl = document.getElementById("l-drift-log");
+    // Motivation
+    const badgeEl = document.getElementById('w-streak-badge');
+    if (d.streak > 0) {
+      badgeEl.style.display = 'inline-flex';
+      document.getElementById('w-streak-num').textContent = d.streak;
+    } else {
+      badgeEl.style.display = 'none';
+    }
+    document.getElementById('w-motivasi').textContent = d.motivasi;
+
+    showScreen('welcome');
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // RENDER LIVE
+  // ════════════════════════════════════════════════════════════════════════
+  function renderLive(d) {
+    document.getElementById('l-name').textContent    = d.student_name;
+    document.getElementById('l-subject').textContent = d.subject;
+    document.getElementById('l-elapsed').textContent =
+      `${d.elapsed_min}:${String(d.elapsed_sec).padStart(2,'0')}`;
+
+    // Animated focus score
+    const focusEl = document.getElementById('l-focus');
+    const curFocus = parseInt(focusEl.textContent) || 0;
+    if (curFocus !== d.focus_score) animateNum(focusEl, curFocus, d.focus_score);
+
+    // Animated drift count
+    const driftEl = document.getElementById('l-drift');
+    const curDrift = parseInt(driftEl.textContent) || 0;
+    if (curDrift !== d.drift_count) animateNum(driftEl, curDrift, d.drift_count, 400);
+
+    // Animated quiz count
+    const quizEl = document.getElementById('l-quiz');
+    const curQuiz = parseInt(quizEl.textContent) || 0;
+    if (curQuiz !== d.quiz_count) animateNum(quizEl, curQuiz, d.quiz_count, 400);
+
+    // Focus score colour on metric card
+    const focusCard = focusEl.parentElement;
+    focusEl.style.color = d.focus_score >= 70 ? 'var(--good)'
+                        : d.focus_score >= 40 ? 'var(--warn)'
+                        : 'var(--danger)';
+
+    // Focus bar
+    const pct   = Math.min(d.focus_score, 100);
+    const barEl = document.getElementById('l-focus-bar');
+    const pctEl = document.getElementById('l-focus-pct');
+    barEl.style.width = pct + '%';
+    barEl.className   = 'focus-fill ' +
+      (pct >= 70 ? 'good' : pct >= 40 ? 'warn' : 'danger');
+    pctEl.textContent = pct + '%';
+
+    // Background colour shift on low focus
+    const overlay = document.getElementById('bg-overlay');
+    if (pct < 40) {
+      overlay.style.background =
+        'radial-gradient(ellipse at center, rgba(120,20,20,0.35) 0%, transparent 70%)';
+    } else if (pct < 70) {
+      overlay.style.background =
+        'radial-gradient(ellipse at center, rgba(120,80,0,0.2) 0%, transparent 70%)';
+    } else {
+      overlay.style.background =
+        'radial-gradient(ellipse at center, rgba(0,80,80,0.15) 0%, transparent 70%)';
+    }
+
+    // Drift log — only re-render if changed
+    const logEl = document.getElementById('l-drift-log');
+    const newLog = JSON.stringify(d.drift_log);
+    if (newLog !== JSON.stringify(lastDriftLog)) {
+      lastDriftLog = d.drift_log || [];
       if (!d.drift_log || d.drift_log.length === 0) {
         logEl.innerHTML = `<div class="drift-empty">Tiada gangguan direkod.</div>`;
       } else {
@@ -448,32 +689,32 @@
             <span class="drift-ts">${ev.ts}</span>
             <span class="drift-badge ${ev.severity}">${ev.severity}</span>
            </div>`
-        ).join("");
-      }
-
-      showScreen("live");
-    }
-
-    // ── Poll /api/booth/state ──────────────────────────────────────────────────
-    async function poll() {
-      try {
-        const res  = await fetch("/api/booth/state");
-        const data = await res.json();
-        if (data.state === "live")    renderLive(data);
-        else if (data.state === "welcome") renderWelcome(data);
-        else showScreen("idle");
-      } catch (e) {
-        // network blip — stay on current screen
+        ).join('');
       }
     }
 
-    // Poll every 3s; pause when tab hidden (kiosk is always visible, but just in case)
-    poll();
-    const pollId = setInterval(poll, 3000);
-    document.addEventListener("visibilitychange", () => {
-      if (document.hidden) clearInterval(pollId);
-      else { poll(); setInterval(poll, 3000); }
-    });
+    showScreen('live');
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // POLL
+  // ════════════════════════════════════════════════════════════════════════
+  async function poll() {
+    try {
+      const res  = await fetch('/api/booth/state');
+      const data = await res.json();
+      if      (data.state === 'live')    renderLive(data);
+      else if (data.state === 'welcome') renderWelcome(data);
+      else    showScreen('idle');
+    } catch(e) { /* network blip — stay on current screen */ }
+  }
+
+  poll();
+  const pid = setInterval(poll, 3000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) clearInterval(pid);
+    else { poll(); setInterval(poll, 3000); }
+  });
   </script>
 </body>
 </html>
